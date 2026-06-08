@@ -1,0 +1,75 @@
+{
+  "experiment": "exp2",
+  "timestamp": "2026-06-08T15:36:25",
+  "cluster_merge": "1-2-3,5-6",
+  "merge_groups": [
+    [
+      1,
+      2,
+      3
+    ],
+    [
+      5,
+      6
+    ]
+  ],
+  "hidden_layers": [
+    128,
+    64
+  ],
+  "alpha": 0.001,
+  "extreme_power": 2.0,
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_min",
+    "wind_mag_std",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos"
+  ],
+  "train_slice": [
+    "2000-01-01",
+    "2022-12-31"
+  ],
+  "val_slice": [
+    "2023-01-01",
+    "2023-12-31"
+  ],
+  "per_cluster": [
+    {
+      "cluster_id": "1-2-3",
+      "n_stations": 16,
+      "MLP_R2": 0.4307716691556991,
+      "MLP_RMSE": 2.826198422293032,
+      "MLP_Bias_P90": -3.17759722542573,
+      "ERA5_Bias_P90": -9.365868526232859
+    },
+    {
+      "cluster_id": "4",
+      "n_stations": 10,
+      "MLP_R2": 0.3541920856877714,
+      "MLP_RMSE": 2.7303449408892693,
+      "MLP_Bias_P90": -2.5180453823926237,
+      "ERA5_Bias_P90": -9.919280013310352
+    },
+    {
+      "cluster_id": "5-6",
+      "n_stations": 4,
+      "MLP_R2": 0.36262979684029584,
+      "MLP_RMSE": 2.690190414983307,
+      "MLP_Bias_P90": -3.6538159474763057,
+      "ERA5_Bias_P90": -10.171206477806908
+    }
+  ]
+}

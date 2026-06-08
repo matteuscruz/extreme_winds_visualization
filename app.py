@@ -18,6 +18,7 @@ streamlit run app.py
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import geopandas as gpd
@@ -51,66 +52,153 @@ PALETTE = [
 YAXIS_WIND = "Rajada máxima (m/s)"
 TOP_N = 15
 
+_MLP_PREDS_COLS = [
+    "estacao", "time", "latitude", "longitude", "cluster_id",
+    "y_true", "y_pred", "era5_wind_mag_max", "ratio_pred", "ratio_true",
+]
+_IMP_COLS = ["feature", "importance", "std", "cluster_id"]
+_STATION_COLS = ["estacao", "latitude", "longitude", "cluster_id"]
+_LAZY_COLS = [
+    "cluster_id", "n_stations", "Model", "R2", "Adj_R2", "RMSE", "Time",
+]
 
-def _cluster_color(cid: int) -> str:
-    return PALETTE[(int(cid) - 1) % len(PALETTE)]
+
+def _cluster_color(cid) -> str:
+    return CLUSTER_COLORS.get(cid, PALETTE[0])
 
 
-# ── Carregamento de dados (cacheado) ─────────────────────────────────────────
+def _cluster_members(cid) -> list[int]:
+    """Polígonos base de um cluster_id ('1-2-3' -> [1,2,3]; 4 -> [4])."""
+    s = str(cid)
+    if "-" in s:
+        return [int(x) for x in s.split("-") if x.strip().isdigit()]
+    try:
+        return [int(float(s))]
+    except ValueError:
+        return []
+
+
+# ── Descoberta de experimentos ───────────────────────────────────────────────
+
+def discover_experiments(base: Path, results_name: str) -> list[dict]:
+    """
+    Varre ``base/exp*`` e monta a lista de experimentos. Fallback: usa o
+    diretório plano ``base`` como experimento único "(raiz)".
+    """
+    exps: list[dict] = []
+    for d in base.glob("exp*"):
+        if not d.is_dir() or not (d / results_name).exists():
+            continue
+        merge = None
+        meta = d / "run_meta.json"
+        if meta.exists():
+            try:
+                merge = json.loads(meta.read_text()).get("cluster_merge")
+            except (json.JSONDecodeError, OSError):
+                merge = None
+        suffix = f" — merge {merge}" if merge else " — baseline"
+        exps.append({"id": d.name, "dir": str(d), "label": d.name + suffix})
+
+    def _exp_num(e: dict) -> int:
+        m = re.search(r"\d+", e["id"])
+        return int(m.group()) if m else 0
+
+    exps.sort(key=_exp_num)
+
+    if not exps and (base / results_name).exists():
+        exps.append({"id": "(raiz)", "dir": str(base), "label": "(raiz)"})
+    return exps
+
+
+# ── Carregamento de dados (cacheado por experimento) ─────────────────────────
 
 @st.cache_data
-def load_data():
-    results = pd.read_csv(ARTIFACTS / "mlp_cluster_results.csv")
-    importance = pd.read_csv(ARTIFACTS / "feature_importance.csv")
-    stations = pd.read_csv(ARTIFACTS / "stations_metadata.csv")
-    lazy = pd.read_csv(LAZY_DIR / "lazy_cluster_results.csv")
+def load_geojson():
+    gdf = gpd.read_file(SHP_PATH).to_crs("EPSG:4326")
+    return json.loads(gdf.to_json())
 
-    preds_path = ARTIFACTS / "predictions_by_station.csv"
+
+@st.cache_data
+def load_mlp(mlp_dir: str):
+    d = Path(mlp_dir)
+
+    res_path = d / "mlp_cluster_results.csv"
+    results = pd.read_csv(res_path) if res_path.exists() else pd.DataFrame()
+
+    imp_path = d / "feature_importance.csv"
+    importance = (
+        pd.read_csv(imp_path) if imp_path.exists()
+        else pd.DataFrame(columns=_IMP_COLS)
+    )
+
+    st_path = d / "stations_metadata.csv"
+    stations = (
+        pd.read_csv(st_path) if st_path.exists()
+        else pd.DataFrame(columns=_STATION_COLS)
+    )
+
+    preds_path = d / "predictions_by_station.csv"
     preds = (
         pd.read_csv(preds_path, parse_dates=["time"])
         if preds_path.exists()
-        else pd.DataFrame(columns=[
-            "estacao", "time", "latitude", "longitude",
-            "cluster_id", "y_true", "y_pred",
-            "era5_wind_mag_max", "ratio_pred", "ratio_true",
-        ])
+        else pd.DataFrame(columns=_MLP_PREDS_COLS)
     )
+    return results, importance, stations, preds
 
-    gdf = gpd.read_file(SHP_PATH).to_crs("EPSG:4326")
-    geojson = json.loads(gdf.to_json())
 
-    results["cluster_str"] = results["cluster_id"].apply(
-        lambda x: f"{int(x):02d}"
-    )
-    stations["cluster_str"] = stations["cluster_id"].apply(
-        lambda x: f"{int(x):02d}"
-    )
-
-    lazy = lazy.rename(columns={
+@st.cache_data
+def load_lazy(lazy_csv: str):
+    p = Path(lazy_csv)
+    if not p.exists():
+        return pd.DataFrame(columns=_LAZY_COLS)
+    lazy = pd.read_csv(p).rename(columns={
         "R-Squared": "R2",
         "Adjusted R-Squared": "Adj_R2",
         "Time Taken": "Time",
     })
     for col in ("R2", "Adj_R2", "RMSE"):
-        lazy[col] = lazy[col].round(4)
-    lazy["Time"] = lazy["Time"].round(3)
+        if col in lazy.columns:
+            lazy[col] = lazy[col].round(4)
+    if "Time" in lazy.columns:
+        lazy["Time"] = lazy["Time"].round(3)
+    return lazy
 
-    return results, importance, stations, preds, lazy, geojson
 
-
-results_df, importance_df, stations_df, preds_df, lazy_df, geojson_clusters = (
-    load_data()
-)
-
-CLUSTER_IDS = sorted(results_df["cluster_id"].tolist())
-LAZY_CLUSTER_IDS = sorted(lazy_df["cluster_id"].unique().tolist())
+geojson_clusters = load_geojson()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+
+# Experimentos MLP — descoberta única (o seletor fica na aba, ver tab_mlp)
+mlp_experiments = discover_experiments(ARTIFACTS, "mlp_cluster_results.csv")
+_mlp_by_id = {e["id"]: e for e in mlp_experiments}
+# Default: primeiro experimento (exp1 = baseline)
+_mlp_default = mlp_experiments[0]["id"] if mlp_experiments else "(nenhum)"
+if "mlp_exp_id" not in st.session_state:
+    st.session_state["mlp_exp_id"] = _mlp_default
 
 with st.sidebar:
     st.title("🌬️ IRC Vendaval")
     st.caption("Correção de viés de rajadas de vento extremo")
     st.divider()
+
+    # O experimento é escolhido na aba MLP (st.session_state["mlp_exp_id"]).
+    mlp_exp_id = st.session_state.get("mlp_exp_id", _mlp_default)
+    if mlp_exp_id not in _mlp_by_id:
+        mlp_exp_id = _mlp_default
+
+    results_df, importance_df, stations_df, preds_df = load_mlp(
+        _mlp_by_id[mlp_exp_id]["dir"] if mlp_exp_id in _mlp_by_id
+        else str(ARTIFACTS)
+    )
+
+    CLUSTER_IDS = (
+        sorted(results_df["cluster_id"].tolist())
+        if not results_df.empty else []
+    )
+    CLUSTER_COLORS = {
+        cid: PALETTE[i % len(PALETTE)] for i, cid in enumerate(CLUSTER_IDS)
+    }
+    CLUSTER_MEMBERS = {cid: _cluster_members(cid) for cid in CLUSTER_IDS}
 
     selected_cluster = st.selectbox(
         "Cluster",
@@ -151,26 +239,37 @@ with st.sidebar:
 def build_map(sel_station: str | None = None) -> go.Figure:
     fig = go.Figure()
 
-    hover_texts = [
-        f"Cluster {r.cluster_id}<br>Estações: {r.n_stations}"
-        f"<br>R²: {r.MLP_R2:.3f}<br>RMSE: {r.MLP_RMSE:.3f}"
-        for r in results_df.itertuples()
-    ]
-    fig.add_trace(go.Choroplethmap(
-        geojson=geojson_clusters,
-        featureidkey="properties.cluster",
-        locations=results_df["cluster_str"].tolist(),
-        z=results_df["cluster_id"].tolist(),
-        colorscale="Viridis",
-        zmin=1, zmax=6,
-        marker_opacity=0.30,
-        marker_line_width=1.2,
-        marker_line_color="white",
-        text=hover_texts,
-        hovertemplate="%{text}<extra></extra>",
-        showscale=False,
-        name="Clusters",
-    ))
+    # Expande cada cluster (possivelmente agregado) nos polígonos base
+    # para casar com featureidkey "properties.cluster" ("01".."14").
+    locations: list[str] = []
+    zvals: list[int] = []
+    texts: list[str] = []
+    for i, r in enumerate(results_df.itertuples()):
+        htext = (
+            f"Cluster {r.cluster_id}<br>Estações: {r.n_stations}"
+            f"<br>R²: {r.MLP_R2:.3f}<br>RMSE: {r.MLP_RMSE:.3f}"
+        )
+        for m in CLUSTER_MEMBERS.get(r.cluster_id, []):
+            locations.append(f"{m:02d}")
+            zvals.append(i)
+            texts.append(htext)
+
+    if locations:
+        fig.add_trace(go.Choroplethmap(
+            geojson=geojson_clusters,
+            featureidkey="properties.cluster",
+            locations=locations,
+            z=zvals,
+            colorscale="Viridis",
+            zmin=0, zmax=max(len(CLUSTER_IDS) - 1, 1),
+            marker_opacity=0.30,
+            marker_line_width=1.2,
+            marker_line_color="white",
+            text=texts,
+            hovertemplate="%{text}<extra></extra>",
+            showscale=False,
+            name="Clusters",
+        ))
 
     if not stations_df.empty:
         colors = [_cluster_color(c) for c in stations_df["cluster_id"]]
@@ -266,7 +365,7 @@ def build_distribution(sel_cluster: int | None) -> go.Figure:
     for cid in CLUSTER_IDS:
         df_c = preds_df[preds_df["cluster_id"] == cid]
         opacity = 1.0 if (sel_cluster is None or sel_cluster == cid) else 0.18
-        label = f"C{int(cid)}"
+        label = f"C{cid}"
 
         fig.add_trace(go.Violin(
             x=[label] * len(df_c), y=df_c["y_true"],
@@ -347,7 +446,7 @@ def build_scatter(sel_cluster: int | None) -> go.Figure:
         opacity = 1.0 if (
             sel_cluster is None or sel_cluster == cid
         ) else 0.10
-        label = f"C{int(cid)}"
+        label = f"C{cid}"
 
         fig.add_trace(go.Scatter(
             x=df_c["y_true"], y=df_c["y_pred"],
@@ -390,7 +489,7 @@ def build_scatter(sel_cluster: int | None) -> go.Figure:
 
 
 def build_metrics_bar(metric: str) -> go.Figure:
-    clusters = [f"C{int(c)}" for c in results_df["cluster_id"]]
+    clusters = [f"C{c}" for c in results_df["cluster_id"]]
     fig = go.Figure()
     fig.add_trace(go.Bar(
         name="MLP", x=clusters,
@@ -474,6 +573,17 @@ tab_mlp, tab_lazy = st.tabs(["Explorador MLP", "Screening LazyPredict"])
 
 with tab_mlp:
 
+    # Seletor de experimento (grava em st.session_state["mlp_exp_id"],
+    # lido pela sidebar para carregar os dados deste experimento).
+    col_exp, _col_pad = st.columns([1, 2])
+    with col_exp:
+        st.selectbox(
+            "Experimento (MLP)",
+            [e["id"] for e in mlp_experiments] or ["(nenhum)"],
+            format_func=lambda i: _mlp_by_id.get(i, {}).get("label", i),
+            key="mlp_exp_id",
+        )
+
     # Linha 1: Mapa + Série temporal
     col_map, col_ts = st.columns(2)
 
@@ -548,13 +658,15 @@ with tab_mlp:
             if c not in ("cluster_id", "n_stations", "n_train", "n_val")
         ]
         display_df[float_cols] = display_df[float_cols].round(3)
+
+        def _highlight_sel(row):
+            c = "background-color: #d0e8ff; font-weight: bold"
+            return [
+                c if row["cluster_id"] == selected_cluster else ""
+            ] * len(row)
+
         st.dataframe(
-            display_df.style.highlight_between(
-                subset=["cluster_id"],
-                left=selected_cluster,
-                right=selected_cluster,
-                color="#d0e8ff",
-            ),
+            display_df.style.apply(_highlight_sel, axis=1),
             width="stretch",
             hide_index=True,
         )
@@ -576,12 +688,34 @@ with tab_lazy:
         icon="ℹ️",
     )
 
-    lazy_cluster = st.selectbox(
-        "Cluster",
-        LAZY_CLUSTER_IDS,
-        format_func=lambda c: f"Cluster {c}",
-        key="lazy_cluster_sel",
+    lazy_experiments = discover_experiments(
+        LAZY_DIR, "lazy_cluster_results.csv"
     )
+    _lazy_by_id = {e["id"]: e for e in lazy_experiments}
+
+    col_lexp, col_lcid = st.columns(2)
+    with col_lexp:
+        lazy_exp_id = st.selectbox(
+            "Experimento (Lazy)",
+            [e["id"] for e in lazy_experiments] or ["(nenhum)"],
+            format_func=lambda i: _lazy_by_id.get(i, {}).get("label", i),
+            key="lazy_exp_sel",
+        )
+
+    lazy_df = load_lazy(
+        str(Path(_lazy_by_id[lazy_exp_id]["dir"]) / "lazy_cluster_results.csv")
+        if lazy_exp_id in _lazy_by_id
+        else str(LAZY_DIR / "lazy_cluster_results.csv")
+    )
+    LAZY_CLUSTER_IDS = sorted(lazy_df["cluster_id"].unique().tolist())
+
+    with col_lcid:
+        lazy_cluster = st.selectbox(
+            "Cluster",
+            LAZY_CLUSTER_IDS,
+            format_func=lambda c: f"Cluster {c}",
+            key="lazy_cluster_sel",
+        )
 
     col_lbar, col_ltbl = st.columns(2)
 

@@ -1,0 +1,89 @@
+{
+  "experiment": "exp1",
+  "timestamp": "2026-06-08T16:14:18",
+  "cluster_merge": null,
+  "merge_groups": [],
+  "hidden_layers": [
+    128,
+    64
+  ],
+  "alpha": 0.001,
+  "extreme_power": 2.0,
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_min",
+    "wind_mag_std",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos"
+  ],
+  "train_slice": [
+    "2000-01-01",
+    "2022-12-31"
+  ],
+  "val_slice": [
+    "2023-01-01",
+    "2023-12-31"
+  ],
+  "per_cluster": [
+    {
+      "cluster_id": 1,
+      "n_stations": 5,
+      "MLP_R2": 0.3989298423261979,
+      "MLP_RMSE": 3.0963074636390036,
+      "MLP_Bias_P90": -3.725717331909881,
+      "ERA5_Bias_P90": -9.825034212477604
+    },
+    {
+      "cluster_id": 2,
+      "n_stations": 8,
+      "MLP_R2": 0.16411487874299435,
+      "MLP_RMSE": 3.034187854392022,
+      "MLP_Bias_P90": -2.5593496412492507,
+      "ERA5_Bias_P90": -9.542296250839678
+    },
+    {
+      "cluster_id": 3,
+      "n_stations": 3,
+      "MLP_R2": 0.49421154288117564,
+      "MLP_RMSE": 2.6359507998100664,
+      "MLP_Bias_P90": 0.043598052335765636,
+      "ERA5_Bias_P90": -7.047033083506062
+    },
+    {
+      "cluster_id": 4,
+      "n_stations": 10,
+      "MLP_R2": 0.3541920856877714,
+      "MLP_RMSE": 2.7303449408892693,
+      "MLP_Bias_P90": -2.5180453823926237,
+      "ERA5_Bias_P90": -9.919280013310352
+    },
+    {
+      "cluster_id": 5,
+      "n_stations": 3,
+      "MLP_R2": 0.0035224401602075295,
+      "MLP_RMSE": 2.9415619761786638,
+      "MLP_Bias_P90": -3.415651890427766,
+      "ERA5_Bias_P90": -9.041405343461959
+    },
+    {
+      "cluster_id": 6,
+      "n_stations": 1,
+      "MLP_R2": 0.29847335144382203,
+      "MLP_RMSE": 2.8963644477262895,
+      "MLP_Bias_P90": -5.084058089054459,
+      "ERA5_Bias_P90": -12.143596578409717
+    }
+  ]
+}
