@@ -1,0 +1,91 @@
+{
+  "experiment": "exp1",
+  "timestamp": "2026-06-15T18:51:40",
+  "cluster_merge": null,
+  "merge_groups": [],
+  "hidden_layers": [
+    128,
+    64
+  ],
+  "alpha": 0.001,
+  "extreme_power": 2.0,
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_min",
+    "wind_mag_std",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos"
+  ],
+  "train_slice": [
+    "2000-01-01",
+    "2022-12-31"
+  ],
+  "val_slice": [
+    "2023-01-01",
+    "2023-12-31"
+  ],
+  "per_cluster": [
+    {
+      "cluster_id": 1,
+      "n_stations": 5,
+      "MLP_R2": 0.4841262533464239,
+      "MLP_RMSE": 2.8684891388616958,
+      "MLP_Bias_P90": -3.7726589457593436,
+      "ERA5_Bias_P90": -9.825034212477604
+    },
+    {
+      "cluster_id": 2,
+      "n_stations": 8,
+      "MLP_R2": 0.33751849520014265,
+      "MLP_RMSE": 2.701195684450387,
+      "MLP_Bias_P90": -3.0372011885677797,
+      "ERA5_Bias_P90": -9.542296250839678
+    },
+    {
+      "cluster_id": 3,
+      "n_stations": 3,
+      "MLP_R2": 0.6252308374300968,
+      "MLP_RMSE": 2.269001416900179,
+      "MLP_Bias_P90": -1.3881235238288074,
+      "ERA5_Bias_P90": -7.047033083506062
+    },
+    {
+      "cluster_id": 4,
+      "n_stations": 10,
+      "MLP_R2": 0.42203142324340737,
+      "MLP_RMSE": 2.582961599563181,
+      "MLP_Bias_P90": -3.223778924403544,
+      "ERA5_Bias_P90": -9.919280013310352
+    },
+    {
+      "cluster_id": 5,
+      "n_stations": 3,
+      "MLP_R2": 0.133664600515371,
+      "MLP_RMSE": 2.742756618842403,
+      "MLP_Bias_P90": -4.721918929719774,
+      "ERA5_Bias_P90": -9.041405343461959
+    },
+    {
+      "cluster_id": 6,
+      "n_stations": 1,
+      "MLP_R2": 0.3512095532689127,
+      "MLP_RMSE": 2.78537289226306,
+      "MLP_Bias_P90": -5.414813330484778,
+      "ERA5_Bias_P90": -12.143596578409717
+    }
+  ],
+  "synthetic_csv": "gan_augment/exp1/synthetic_augment.csv",
+  "note": "MLP com data augmentation de extremos via cWGAN-GP"
+}

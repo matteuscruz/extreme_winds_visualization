@@ -90,13 +90,21 @@ def discover_experiments(base: Path, results_name: str) -> list[dict]:
         if not d.is_dir() or not (d / results_name).exists():
             continue
         merge = None
+        synthetic = None
         meta = d / "run_meta.json"
         if meta.exists():
             try:
-                merge = json.loads(meta.read_text()).get("cluster_merge")
+                meta_d = json.loads(meta.read_text())
+                merge = meta_d.get("cluster_merge")
+                synthetic = meta_d.get("synthetic_csv")
             except (json.JSONDecodeError, OSError):
-                merge = None
-        suffix = f" — merge {merge}" if merge else " — baseline"
+                merge, synthetic = None, None
+        if synthetic:
+            suffix = " — augmented (GAN)"
+        elif merge:
+            suffix = f" — merge {merge}"
+        else:
+            suffix = " — baseline"
         exps.append({"id": d.name, "dir": str(d), "label": d.name + suffix})
 
     def _exp_num(e: dict) -> int:
