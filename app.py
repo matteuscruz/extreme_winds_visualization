@@ -666,7 +666,7 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
 
 # ── Layout principal ──────────────────────────────────────────────────────────
 
-st.title("IRC Vendaval — Correção de Viés de Rajadas de Vento Extremo")
+st.title("Correção de Viés de Rajadas de Vento Extremo")
 
 tab_mlp, tab_lazy = st.tabs(["Explorador MLP", "Screening LazyPredict"])
 
