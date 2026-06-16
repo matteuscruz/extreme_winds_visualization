@@ -1,0 +1,95 @@
+{
+  "experiment": "exp1",
+  "timestamp": "2026-06-07T23:37:36",
+  "cluster_merge": null,
+  "merge_groups": [],
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "2m_temperature",
+    "surface_pressure",
+    "day_sin",
+    "day_cos",
+    "latitude",
+    "longitude"
+  ],
+  "train_slice": [
+    "2000-01-01",
+    "2022-12-31"
+  ],
+  "val_slice": [
+    "2023-01-01",
+    "2023-12-31"
+  ],
+  "clusters": {
+    "1": {
+      "n_stations": 5,
+      "n_samples": 8364
+    },
+    "2": {
+      "n_stations": 8,
+      "n_samples": 12515
+    },
+    "3": {
+      "n_stations": 3,
+      "n_samples": 4134
+    },
+    "4": {
+      "n_stations": 10,
+      "n_samples": 16988
+    },
+    "5": {
+      "n_stations": 3,
+      "n_samples": 4744
+    },
+    "6": {
+      "n_stations": 1,
+      "n_samples": 1800
+    }
+  },
+  "best_per_cluster": [
+    {
+      "cluster_id": 1,
+      "n_stations": 5,
+      "Model": "MLPRegressor",
+      "R-Squared": 0.618854932116941,
+      "RMSE": 2.465622863594372
+    },
+    {
+      "cluster_id": 2,
+      "n_stations": 8,
+      "Model": "MLPRegressor",
+      "R-Squared": 0.46748622966433717,
+      "RMSE": 2.4217794490823707
+    },
+    {
+      "cluster_id": 3,
+      "n_stations": 3,
+      "Model": "SVR",
+      "R-Squared": 0.6873862639807814,
+      "RMSE": 2.0723202523384887
+    },
+    {
+      "cluster_id": 4,
+      "n_stations": 10,
+      "Model": "MLPRegressor",
+      "R-Squared": 0.5304648377483134,
+      "RMSE": 2.328090703159244
+    },
+    {
+      "cluster_id": 5,
+      "n_stations": 3,
+      "Model": "OrthogonalMatchingPursuitCV",
+      "R-Squared": 0.32989141900659535,
+      "RMSE": 2.412219540164381
+    },
+    {
+      "cluster_id": 6,
+      "n_stations": 1,
+      "Model": "SGDRegressor",
+      "R-Squared": 0.4673280492856511,
+      "RMSE": 2.5238354469829902
+    }
+  ]
+}
