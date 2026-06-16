@@ -906,7 +906,7 @@ with tab_lazy:
             styled = delta_df.style
             for c in ("ΔR²", "ΔRMSE"):
                 if c in delta_df.columns:
-                    styled = styled.applymap(
+                    styled = styled.map(
                         lambda v, col=c: _color_delta(v, col), subset=[c]
                     )
 
