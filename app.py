@@ -571,6 +571,99 @@ def build_lazy_bar(cluster_id: int) -> go.Figure:
     return fig
 
 
+def build_lazy_comparison(exps: list[dict]) -> go.Figure:
+    """Barras agrupadas: best R² por cluster × experimento."""
+    frames = []
+    for e in exps:
+        _csv = str(Path(e["dir"]) / "lazy_cluster_results.csv")
+        df = load_lazy(_csv)
+        if df.empty:
+            continue
+        best = (
+            df.sort_values("R2", ascending=False)
+            .groupby("cluster_id", sort=True)
+            .first()
+            .reset_index()[["cluster_id", "R2", "RMSE", "Model"]]
+        )
+        best["exp"] = e["label"]
+        frames.append(best)
+
+    if not frames:
+        return go.Figure()
+
+    combined = pd.concat(frames, ignore_index=True)
+    fig = go.Figure()
+    for exp_label in combined["exp"].unique():
+        sub = combined[combined["exp"] == exp_label].sort_values("cluster_id")
+        fig.add_trace(go.Bar(
+            name=exp_label,
+            x=[f"C{int(c)}" for c in sub["cluster_id"]],
+            y=sub["R2"],
+            text=sub["R2"].apply(lambda v: f"{v:.3f}"),
+            textposition="outside",
+            hovertemplate=(
+                "<b>" + exp_label + "</b><br>"
+                "Cluster %{x}<br>R²: %{y:.4f}"
+                "<extra></extra>"
+            ),
+        ))
+
+    fig.update_layout(
+        barmode="group",
+        title="Melhor R² por cluster × experimento",
+        xaxis_title="Cluster",
+        yaxis_title="R² (best model)",
+        template="plotly_white",
+        height=420,
+        legend={"orientation": "h", "y": -0.25},
+        margin={"t": 55, "b": 80},
+    )
+    return fig
+
+
+def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
+    """Tabela com ΔR² e ΔRMSE de cada experimento vs baseline por cluster."""
+    dfs: dict[str, pd.DataFrame] = {}
+    for e in exps:
+        df = load_lazy(str(Path(e["dir"]) / "lazy_cluster_results.csv"))
+        if df.empty:
+            continue
+        best = (
+            df.sort_values("R2", ascending=False)
+            .groupby("cluster_id", sort=True)
+            .first()
+            .reset_index()[["cluster_id", "R2", "RMSE", "Model"]]
+        )
+        dfs[e["id"]] = best
+
+    if baseline_id not in dfs:
+        return pd.DataFrame()
+
+    base = dfs[baseline_id].set_index("cluster_id")
+    rows = []
+    for exp_id, best in dfs.items():
+        best = best.set_index("cluster_id")
+        for cid in sorted(best.index):
+            _nan = float("nan")
+            r2 = best.loc[cid, "R2"] if cid in best.index else _nan
+            rmse = best.loc[cid, "RMSE"] if cid in best.index else _nan
+            r2_b = base.loc[cid, "R2"] if cid in base.index else _nan
+            rmse_b = base.loc[cid, "RMSE"] if cid in base.index else _nan
+            modelo = (
+                best.loc[cid, "Model"] if cid in best.index else ""
+            )
+            rows.append({
+                "Experimento": exp_id,
+                "Cluster": int(cid),
+                "Melhor Modelo": modelo,
+                "R²": round(r2, 4),
+                "RMSE": round(rmse, 4),
+                "ΔR²": round(r2 - r2_b, 4),
+                "ΔRMSE": round(rmse - rmse_b, 4),
+            })
+    return pd.DataFrame(rows)
+
+
 # ── Layout principal ──────────────────────────────────────────────────────────
 
 st.title("IRC Vendaval — Correção de Viés de Rajadas de Vento Extremo")
@@ -700,55 +793,125 @@ with tab_lazy:
         LAZY_DIR, "lazy_cluster_results.csv"
     )
     _lazy_by_id = {e["id"]: e for e in lazy_experiments}
+    _lazy_ids = [e["id"] for e in lazy_experiments] or ["(nenhum)"]
 
-    col_lexp, col_lcid = st.columns(2)
-    with col_lexp:
-        lazy_exp_id = st.selectbox(
-            "Experimento (Lazy)",
-            [e["id"] for e in lazy_experiments] or ["(nenhum)"],
-            format_func=lambda i: _lazy_by_id.get(i, {}).get("label", i),
-            key="lazy_exp_sel",
-        )
-
-    lazy_df = load_lazy(
-        str(Path(_lazy_by_id[lazy_exp_id]["dir"]) / "lazy_cluster_results.csv")
-        if lazy_exp_id in _lazy_by_id
-        else str(LAZY_DIR / "lazy_cluster_results.csv")
+    sub_ranking, sub_compare = st.tabs(
+        ["Ranking por experimento", "Comparação entre experimentos"]
     )
-    LAZY_CLUSTER_IDS = sorted(lazy_df["cluster_id"].unique().tolist())
 
-    with col_lcid:
-        lazy_cluster = st.selectbox(
-            "Cluster",
-            LAZY_CLUSTER_IDS,
-            format_func=lambda c: f"Cluster {c}",
-            key="lazy_cluster_sel",
+    # ── Sub-aba: Ranking ──────────────────────────────────────────────────
+    with sub_ranking:
+        col_lexp, col_lcid = st.columns(2)
+        with col_lexp:
+            lazy_exp_id = st.selectbox(
+                "Experimento (Lazy)",
+                _lazy_ids,
+                format_func=lambda i: _lazy_by_id.get(i, {}).get("label", i),
+                key="lazy_exp_sel",
+            )
+
+        _lazy_csv = (
+            str(
+                Path(_lazy_by_id[lazy_exp_id]["dir"])
+                / "lazy_cluster_results.csv"
+            )
+            if lazy_exp_id in _lazy_by_id
+            else str(LAZY_DIR / "lazy_cluster_results.csv")
+        )
+        lazy_df = load_lazy(_lazy_csv)
+        LAZY_CLUSTER_IDS = sorted(
+            lazy_df["cluster_id"].unique().tolist()
         )
 
-    col_lbar, col_ltbl = st.columns(2)
+        with col_lcid:
+            lazy_cluster = st.selectbox(
+                "Cluster",
+                LAZY_CLUSTER_IDS,
+                format_func=lambda c: f"Cluster {c}",
+                key="lazy_cluster_sel",
+            )
 
-    with col_lbar:
-        st.plotly_chart(
-            build_lazy_bar(lazy_cluster),
-            width="stretch",
-        )
+        col_lbar, col_ltbl = st.columns(2)
 
-    with col_ltbl:
-        df_c = (
-            lazy_df[lazy_df["cluster_id"] == lazy_cluster]
-            .sort_values("R2", ascending=False)
-            .reset_index(drop=True)
-        )
-        df_c.insert(0, "Rank", range(1, len(df_c) + 1))
+        with col_lbar:
+            st.plotly_chart(
+                build_lazy_bar(lazy_cluster),
+                width="stretch",
+            )
 
-        def _highlight_mlp(row):
-            color = "background-color: #fff3cd; font-weight: bold"
-            return [color if row["Model"] == "MLPRegressor" else ""] * len(row)
+        with col_ltbl:
+            df_c = (
+                lazy_df[lazy_df["cluster_id"] == lazy_cluster]
+                .sort_values("R2", ascending=False)
+                .reset_index(drop=True)
+            )
+            df_c.insert(0, "Rank", range(1, len(df_c) + 1))
 
-        st.dataframe(
-            df_c[["Rank", "Model", "R2", "Adj_R2", "RMSE", "Time"]]
-            .style.apply(_highlight_mlp, axis=1),
-            width="stretch",
-            hide_index=True,
-            height=530,
-        )
+            def _highlight_mlp(row):
+                color = "background-color: #fff3cd; font-weight: bold"
+                return [
+                    color if row["Model"] == "MLPRegressor" else ""
+                ] * len(row)
+
+            st.dataframe(
+                df_c[["Rank", "Model", "R2", "Adj_R2", "RMSE", "Time"]]
+                .style.apply(_highlight_mlp, axis=1),
+                width="stretch",
+                hide_index=True,
+                height=530,
+            )
+
+    # ── Sub-aba: Comparação ───────────────────────────────────────────────
+    with sub_compare:
+        if len(lazy_experiments) < 2:
+            st.info(
+                "Execute ao menos dois experimentos para comparar.",
+                icon="ℹ️",
+            )
+        else:
+            col_base, _ = st.columns([1, 2])
+            with col_base:
+                baseline_id = st.selectbox(
+                    "Baseline (referência)",
+                    _lazy_ids,
+                    format_func=lambda i: (
+                        _lazy_by_id.get(i, {}).get("label", i)
+                    ),
+                    key="lazy_baseline_sel",
+                )
+
+            st.plotly_chart(
+                build_lazy_comparison(lazy_experiments),
+                use_container_width=True,
+            )
+
+            st.subheader("Delta vs baseline")
+            delta_df = build_lazy_delta_table(
+                lazy_experiments, baseline_id
+            )
+
+            def _color_delta(val, col):
+                if col == "ΔR²":
+                    return (
+                        "color: green" if val > 0
+                        else "color: red" if val < 0 else ""
+                    )
+                if col == "ΔRMSE":
+                    return (
+                        "color: green" if val < 0
+                        else "color: red" if val > 0 else ""
+                    )
+                return ""
+
+            styled = delta_df.style
+            for c in ("ΔR²", "ΔRMSE"):
+                if c in delta_df.columns:
+                    styled = styled.applymap(
+                        lambda v, col=c: _color_delta(v, col), subset=[c]
+                    )
+
+            st.dataframe(
+                styled,
+                use_container_width=True,
+                hide_index=True,
+            )
