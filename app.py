@@ -40,6 +40,7 @@ st.set_page_config(
 
 ARTIFACTS = Path("artifacts/mlp_clusters")
 LAZY_DIR = Path("artifacts/lazy_clusters")
+LSTM_DIR = Path("artifacts/lstm_pytorch")
 SHP_PATH = Path("dataset/shp/shp_vento.shp")
 
 TRAIN_PERIOD = ("2000-01-01", "2022-12-31")
@@ -597,7 +598,7 @@ def build_lazy_comparison(exps: list[dict]) -> go.Figure:
         sub = combined[combined["exp"] == exp_label].sort_values("cluster_id")
         fig.add_trace(go.Bar(
             name=exp_label,
-            x=[f"C{int(c)}" for c in sub["cluster_id"]],
+            x=[f"C{c}" for c in sub["cluster_id"]],
             y=sub["R2"],
             text=sub["R2"].apply(lambda v: f"{v:.3f}"),
             textposition="outside",
@@ -654,7 +655,7 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
             )
             rows.append({
                 "Experimento": exp_id,
-                "Cluster": int(cid),
+                "Cluster": cid,
                 "Melhor Modelo": modelo,
                 "R²": round(r2, 4),
                 "RMSE": round(rmse, 4),
@@ -668,7 +669,9 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
 
 st.title("Correção de Viés de Rajadas de Vento Extremo")
 
-tab_mlp, tab_lazy = st.tabs(["Explorador MLP", "Screening LazyPredict"])
+tab_mlp, tab_lazy, tab_dl = st.tabs(
+    ["Explorador MLP", "Screening LazyPredict", "Deep Learning"]
+)
 
 # ── Aba 1: Explorador MLP ─────────────────────────────────────────────────────
 
@@ -915,3 +918,187 @@ with tab_lazy:
                 use_container_width=True,
                 hide_index=True,
             )
+
+
+# ── Helpers Deep Learning (LSTM) ──────────────────────────────────────────────
+
+def discover_lstm_experiments(base: Path) -> list[dict]:
+    exps: list[dict] = []
+    if not base.exists():
+        return exps
+    for d in sorted(base.iterdir()):
+        if d.is_dir() and (d / "csv" / "lstm_pytorch_results.csv").exists():
+            exps.append({"id": d.name, "dir": str(d)})
+    return exps
+
+
+@st.cache_data
+def load_lstm_results(exp_dir: str) -> pd.DataFrame:
+    p = Path(exp_dir) / "csv" / "lstm_pytorch_results.csv"
+    return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
+
+@st.cache_data
+def load_lstm_loss(exp_dir: str, cid) -> pd.DataFrame:
+    p = Path(exp_dir) / "loss_history" / f"loss_history_c{cid}.csv"
+    return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
+
+@st.cache_data
+def load_lstm_preds(exp_dir: str, cid) -> pd.DataFrame:
+    p = Path(exp_dir) / "predictions" / f"predictions_c{cid}.csv"
+    return pd.read_csv(p) if p.exists() else pd.DataFrame()
+
+
+@st.cache_data
+def load_lstm_arch(exp_dir: str, cid) -> dict:
+    p = Path(exp_dir) / "architecture" / f"arch_c{cid}.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+with tab_dl:
+    st.subheader("TR-LSTM — Deep Learning")
+    dl_exps = discover_lstm_experiments(LSTM_DIR)
+    if not dl_exps:
+        st.info(
+            f"Nenhum experimento LSTM em `{LSTM_DIR}`. Copie a pasta do "
+            "experimento (ex.: `lstm_v2/`) para esse diretório."
+        )
+    else:
+        by_id = {e["id"]: e for e in dl_exps}
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            dl_exp = st.selectbox(
+                "Experimento (LSTM)", list(by_id), key="dl_exp_id"
+            )
+        exp_dir = by_id[dl_exp]["dir"]
+        dl_results = load_lstm_results(exp_dir)
+        clusters = (
+            sorted(dl_results["cluster_id"].tolist())
+            if not dl_results.empty else []
+        )
+        with c2:
+            dl_cid = st.selectbox("Cluster", clusters, key="dl_cid")
+
+        if not dl_results.empty and dl_cid is not None:
+            row = dl_results[dl_results["cluster_id"] == dl_cid].iloc[0]
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("val R²", f"{row.get('val_R2', float('nan')):.3f}")
+            m2.metric("val RMSE", f"{row.get('val_RMSE', float('nan')):.2f}")
+            m3.metric(
+                "val Bias@P90", f"{row.get('val_Bias_P90', float('nan')):+.2f}"
+            )
+            m4.metric("test R²", f"{row.get('test_R2', float('nan')):.3f}")
+
+        sub_loss, sub_scatter, sub_arch = st.tabs(
+            ["Curva de Loss", "Scatter Obs×Pred", "Arquitetura & Pesos"]
+        )
+
+        with sub_loss:
+            loss = load_lstm_loss(exp_dir, dl_cid)
+            if loss.empty:
+                png = (
+                    Path(exp_dir) / "plots" / "per_cluster"
+                    / f"loss_curve_{dl_cid}.png"
+                )
+                if png.exists():
+                    st.caption(
+                        "Série de loss não disponível como dado neste "
+                        "experimento — exibindo o PNG gerado no treino."
+                    )
+                    st.image(str(png), use_container_width=True)
+                else:
+                    st.warning("Sem loss_history para este cluster.")
+            else:
+                st.line_chart(
+                    loss.set_index("epoch")[["train_loss", "val_loss"]]
+                )
+                best_ep = int(loss["val_loss"].idxmin()) + 1
+                st.caption(
+                    f"{len(loss)} épocas | melhor val = "
+                    f"{loss['val_loss'].min():.4f} (época {best_ep})"
+                )
+
+        with sub_scatter:
+            preds = load_lstm_preds(exp_dir, dl_cid)
+            if preds.empty:
+                st.warning("Sem predictions para este cluster.")
+            else:
+                split = st.radio(
+                    "Split", ["val", "test", "train"],
+                    horizontal=True, key="dl_split",
+                )
+                sub = preds[preds["split"] == split]
+                if sub.empty:
+                    st.info(f"Sem dados para o split '{split}'.")
+                else:
+                    lo = float(min(sub["y_true"].min(), sub["y_pred"].min()))
+                    hi = float(max(sub["y_true"].max(), sub["y_pred"].max()))
+                    fig = go.Figure()
+                    fig.add_trace(go.Scattergl(
+                        x=sub["y_true"], y=sub["y_pred"], mode="markers",
+                        marker=dict(size=5, opacity=0.4, color="#1f77b4"),
+                        name=split,
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=[lo, hi], y=[lo, hi], mode="lines",
+                        line=dict(dash="dash", color="black"), name="1:1",
+                    ))
+                    fig.update_layout(
+                        xaxis_title="Observado (m/s)",
+                        yaxis_title="Predito (m/s)",
+                        height=520, margin=dict(l=10, r=10, t=30, b=10),
+                    )
+                    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+                    st.plotly_chart(fig, use_container_width=True)
+
+        with sub_arch:
+            arch = load_lstm_arch(exp_dir, dl_cid)
+            if not arch:
+                st.warning("Sem architecture json para este cluster.")
+            else:
+                st.markdown(
+                    f"**{arch['model']}** — "
+                    f"{arch['total_params']:,} parâmetros"
+                )
+                st.json(arch.get("hyperparams", {}), expanded=False)
+                layers = pd.DataFrame([
+                    {
+                        "camada": ly["name"],
+                        "shape": "×".join(map(str, ly["shape"])),
+                        "params": ly["params"],
+                        "média": round(ly["mean"], 4),
+                        "std": round(ly["std"], 4),
+                    }
+                    for ly in arch["layers"]
+                ])
+                st.dataframe(
+                    layers, use_container_width=True, hide_index=True
+                )
+                hist_layers = [
+                    ly for ly in arch["layers"] if "hist_counts" in ly
+                ]
+                if hist_layers:
+                    sel = st.selectbox(
+                        "Histograma de pesos — camada",
+                        [ly["name"] for ly in hist_layers],
+                        key="dl_hist_layer",
+                    )
+                    lyr = next(
+                        ly for ly in hist_layers if ly["name"] == sel
+                    )
+                    edges = lyr["hist_edges"]
+                    centers = [
+                        round((edges[i] + edges[i + 1]) / 2, 4)
+                        for i in range(len(edges) - 1)
+                    ]
+                    hist_df = pd.DataFrame(
+                        {"peso": centers, "contagem": lyr["hist_counts"]}
+                    ).set_index("peso")
+                    st.bar_chart(hist_df)
+
+        st.divider()
+        st.caption(
+            "Modelo: **TR-LSTM** — ref: *LSTM and Transformer-based "
+            "framework for bias correction of ERA5 hourly wind speeds*."
+        )
