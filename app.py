@@ -665,12 +665,142 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ── Ganhos por experimento (matriz cluster × trimestre) ──────────────────────
+
+SEASONS_ORDER = ["DJF", "MAM", "JJA", "SON"]
+SEASON_PT = {
+    "DJF": "Verão (DJF)", "MAM": "Outono (MAM)",
+    "JJA": "Inverno (JJA)", "SON": "Primavera (SON)",
+}
+# Escala divergente CVD-segura, centrada em R²=0 (vermelho=ruim ↔ azul=bom)
+R2_COLORSCALE = "RdBu"
+
+
+def _gains_metric(frames: list[pd.DataFrame]) -> str:
+    """Métrica ÚNICA para toda a comparação: R² de deploy só se TODOS os
+    experimentos a tiverem (comparação apples-to-apples); senão R² bruto."""
+    all_have_deploy = all(
+        "R2_deploy_mean" in f.columns and f["R2_deploy_mean"].notna().any()
+        for f in frames
+    )
+    return "R2_deploy_mean" if all_have_deploy else "R-Squared"
+
+
+def build_gains_long(exps: list[dict]) -> pd.DataFrame:
+    """Melhor modelo por (experimento, cluster, trimestre).
+
+    Métrica única em toda a matriz (ver _gains_metric). Experimentos SEM
+    estratificação sazonal preenchem os 4 trimestres com o modelo global
+    (marcado is_global=True → sufixo ** na exibição).
+    """
+    loaded = []
+    for e in exps:
+        csv = Path(e["dir"]) / "lazy_cluster_results.csv"
+        if not csv.exists():
+            continue
+        df = pd.read_csv(csv)
+        if not df.empty:
+            loaded.append((e, df))
+    if not loaded:
+        return pd.DataFrame()
+
+    metric = _gains_metric([df for _, df in loaded])
+
+    rows: list[dict] = []
+    for e, df in loaded:
+        df = df.dropna(subset=[metric])
+        has_season = (
+            "season" in df.columns and df["season"].notna().any()
+        )
+        glob = df[df["season"].isna()] if has_season else df
+
+        for cid in sorted(df["cluster_id"].astype(str).unique()):
+            g_sub = glob[glob["cluster_id"].astype(str) == cid]
+            g_best = (
+                g_sub.loc[g_sub[metric].idxmax()] if not g_sub.empty else None
+            )
+            for season in SEASONS_ORDER:
+                best, is_global = g_best, True
+                if has_season:
+                    s_sub = df[
+                        (df["cluster_id"].astype(str) == cid)
+                        & (df["season"] == season)
+                    ]
+                    if not s_sub.empty:
+                        best = s_sub.loc[s_sub[metric].idxmax()]
+                        is_global = False
+                if best is None:
+                    continue
+                rows.append({
+                    "exp": e["id"],
+                    "cluster_id": cid,
+                    "season": season,
+                    "model": best["Model"],
+                    "r2": float(best[metric]),
+                    "is_global": is_global,
+                    "metric": metric,
+                })
+    return pd.DataFrame(rows)
+
+
+def build_gains_heatmap(long_df: pd.DataFrame, cid: str) -> go.Figure:
+    """Heatmap experimentos (linhas) × trimestres (colunas) para um cluster."""
+    sub = long_df[long_df["cluster_id"].astype(str) == str(cid)]
+    exp_order = sorted(sub["exp"].unique(), key=lambda s: (
+        int(m.group()) if (m := re.search(r"\d+", s)) else 0
+    ))
+    z, text, hover = [], [], []
+    for exp in exp_order:
+        zr, tr, hr = [], [], []
+        for season in SEASONS_ORDER:
+            cell = sub[(sub["exp"] == exp) & (sub["season"] == season)]
+            if cell.empty:
+                zr.append(None)
+                tr.append("")
+                hr.append("")
+                continue
+            r2 = cell.iloc[0]["r2"]
+            flag = "**" if bool(cell.iloc[0]["is_global"]) else ""
+            zr.append(r2)
+            tr.append(f"{r2:.3f}{flag}")
+            hr.append(
+                f"<b>{exp}</b> — {SEASON_PT[season]}<br>"
+                f"Modelo: {cell.iloc[0]['model']}<br>"
+                f"R² deploy: {r2:.3f}"
+                + ("<br><i>modelo global (**)</i>" if flag else "")
+            )
+        z.append(zr)
+        text.append(tr)
+        hover.append(hr)
+
+    fig = go.Figure(go.Heatmap(
+        z=z,
+        x=[SEASON_PT[s] for s in SEASONS_ORDER],
+        y=exp_order,
+        text=text,
+        texttemplate="%{text}",
+        customdata=hover,
+        hovertemplate="%{customdata}<extra></extra>",
+        colorscale=R2_COLORSCALE,
+        zmid=0,
+        colorbar={"title": "R²", "thickness": 14},
+        xgap=2, ygap=2,
+    ))
+    fig.update_layout(
+        height=90 + 46 * len(exp_order),
+        margin={"t": 30, "b": 40, "l": 80, "r": 20},
+        yaxis={"autorange": "reversed"},
+    )
+    return fig
+
+
 # ── Layout principal ──────────────────────────────────────────────────────────
 
 st.title("Correção de Viés de Rajadas de Vento Extremo")
 
-tab_mlp, tab_lazy, tab_dl = st.tabs(
-    ["Explorador MLP", "Screening LazyPredict", "Deep Learning"]
+tab_mlp, tab_lazy, tab_gains, tab_dl = st.tabs(
+    ["Explorador MLP", "Screening LazyPredict",
+     "Ganhos por Experimento", "Deep Learning"]
 )
 
 # ── Aba 1: Explorador MLP ─────────────────────────────────────────────────────
@@ -954,6 +1084,75 @@ def load_lstm_preds(exp_dir: str, cid) -> pd.DataFrame:
 def load_lstm_arch(exp_dir: str, cid) -> dict:
     p = Path(exp_dir) / "architecture" / f"arch_c{cid}.json"
     return json.loads(p.read_text()) if p.exists() else {}
+
+
+with tab_gains:
+    st.subheader("Ganhos por Experimento — melhor modelo por cluster × trimestre")
+    gains_exps = discover_experiments(LAZY_DIR, "lazy_cluster_results.csv")
+    if not gains_exps:
+        st.info("Nenhum experimento LazyPredict encontrado.")
+    else:
+        long_df = build_gains_long(gains_exps)
+        if long_df.empty:
+            st.info("Sem métricas para exibir.")
+        else:
+            metric_used = long_df["metric"].iloc[0]
+            metric_lbl = (
+                "R² de deploy (mensal)" if metric_used == "R2_deploy_mean"
+                else "R² bruto (anual)"
+            )
+            st.caption(
+                f"Métrica: **{metric_lbl}** (`{metric_used}`) — melhor modelo "
+                "por cluster e trimestre climático. Experimentos **não** "
+                "estratificados por estação repetem o valor do modelo global "
+                "nos 4 trimestres, marcados com **."
+            )
+            if metric_used != "R2_deploy_mean":
+                st.caption(
+                    "ℹ️ Usando R² bruto porque nem todos os experimentos têm "
+                    "R² de deploy — troca automática para deploy quando todos "
+                    "tiverem (comparação apples-to-apples)."
+                )
+            g_clusters = sorted(
+                long_df["cluster_id"].astype(str).unique(),
+                key=lambda s: (
+                    int(m.group()) if (m := re.search(r"\d+", s)) else 0, s
+                ),
+            )
+            g_sel = st.selectbox(
+                "Cluster", g_clusters, format_func=lambda c: f"Cluster {c}",
+                key="gains_cluster",
+            )
+            st.plotly_chart(
+                build_gains_heatmap(long_df, g_sel),
+                use_container_width=True,
+            )
+            st.caption(
+                "Linhas = experimentos (de cima para baixo, mais recentes). "
+                "Azul = R² maior; vermelho = R² ≤ 0. "
+                "** = métrica do modelo global aplicada ao trimestre."
+            )
+
+            with st.expander("Tabela detalhada — R² e modelo por trimestre"):
+                tbl = long_df.copy()
+                tbl["Trimestre"] = tbl["season"].map(SEASON_PT)
+                tbl["R²"] = tbl.apply(
+                    lambda r: f"{r['r2']:.3f}{'**' if r['is_global'] else ''}",
+                    axis=1,
+                )
+                cols_order = [SEASON_PT[s] for s in SEASONS_ORDER]
+                r2_piv = tbl.pivot_table(
+                    index=["exp", "cluster_id"], columns="Trimestre",
+                    values="R²", aggfunc="first",
+                ).reindex(columns=cols_order)
+                mdl_piv = tbl.pivot_table(
+                    index=["exp", "cluster_id"], columns="Trimestre",
+                    values="model", aggfunc="first",
+                ).reindex(columns=cols_order)
+                st.markdown("**R² de deploy**")
+                st.dataframe(r2_piv, use_container_width=True)
+                st.markdown("**Modelo escolhido**")
+                st.dataframe(mdl_piv, use_container_width=True)
 
 
 with tab_dl:
