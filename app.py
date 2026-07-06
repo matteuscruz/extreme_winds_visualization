@@ -1,14 +1,14 @@
 """
-IRC Vendaval — Dashboard de Resultados (Streamlit)
+IRC Vendaval — Results Dashboard (Streamlit)
 ==================================================
-Visualização interativa da correção de viés de rajadas de vento extremo.
+Interactive visualization of extreme wind gust bias correction.
 
-Aba 1 — Explorador MLP:
-  mapa de clusters + estações, série temporal, distribuição,
-  scatter com regressão, métricas e importância de features.
+Tab 1 — MLP Explorer:
+  cluster map + stations, time series, distribution,
+  scatter with regression, metrics and feature importance.
 
-Aba 2 — Screening LazyPredict:
-  ranking dos 43 modelos avaliados por cluster.
+Tab 2 — LazyPredict Screening:
+  ranking of the 43 evaluated models per cluster.
 
 Uso
 ---
@@ -50,7 +50,7 @@ PALETTE = [
     "#1f77b4", "#ff7f0e", "#2ca02c",
     "#d62728", "#9467bd", "#8c564b",
 ]
-YAXIS_WIND = "Rajada máxima (m/s)"
+YAXIS_WIND = "Maximum Gust (m/s)"
 TOP_N = 15
 
 _MLP_PREDS_COLS = [
@@ -69,7 +69,7 @@ def _cluster_color(cid) -> str:
 
 
 def _cluster_members(cid) -> list[int]:
-    """Polígonos base de um cluster_id ('1-2-3' -> [1,2,3]; 4 -> [4])."""
+    """Base polygons of a cluster_id ('1-2-3' -> [1,2,3]; 4 -> [4])."""
     s = str(cid)
     if "-" in s:
         return [int(x) for x in s.split("-") if x.strip().isdigit()]
@@ -83,8 +83,8 @@ def _cluster_members(cid) -> list[int]:
 
 def discover_experiments(base: Path, results_name: str) -> list[dict]:
     """
-    Varre ``base/exp*`` e monta a lista de experimentos. Fallback: usa o
-    diretório plano ``base`` como experimento único "(raiz)".
+    Scans ``base/exp*`` and builds the list of experiments. Fallback: uses the
+    flat directory ``base`` as a single experiment "(root)".
     """
     exps: list[dict] = []
     for d in base.glob("exp*"):
@@ -115,7 +115,7 @@ def discover_experiments(base: Path, results_name: str) -> list[dict]:
     exps.sort(key=_exp_num)
 
     if not exps and (base / results_name).exists():
-        exps.append({"id": "(raiz)", "dir": str(base), "label": "(raiz)"})
+        exps.append({"id": "(root)", "dir": str(base), "label": "(root)"})
     return exps
 
 
@@ -180,14 +180,14 @@ geojson_clusters = load_geojson()
 # Experimentos MLP — descoberta única (o seletor fica na aba, ver tab_mlp)
 mlp_experiments = discover_experiments(ARTIFACTS, "mlp_cluster_results.csv")
 _mlp_by_id = {e["id"]: e for e in mlp_experiments}
-# Default: primeiro experimento (exp1 = baseline)
-_mlp_default = mlp_experiments[0]["id"] if mlp_experiments else "(nenhum)"
+# Default: first experiment (exp1 = baseline)
+_mlp_default = mlp_experiments[0]["id"] if mlp_experiments else "(none)"
 if "mlp_exp_id" not in st.session_state:
     st.session_state["mlp_exp_id"] = _mlp_default
 
 with st.sidebar:
     st.title("🌬️ IRC Vendaval")
-    st.caption("Correção de viés de rajadas de vento extremo")
+    st.caption("Extreme wind gust bias correction")
     st.divider()
 
     # O experimento é escolhido na aba MLP (st.session_state["mlp_exp_id"]).
@@ -220,26 +220,26 @@ with st.sidebar:
     ]["estacao"].tolist()
 
     selected_station = st.selectbox(
-        "Estação",
-        ["(nenhuma)"] + stations_in_cluster,
+        "Station",
+        ["(none)"] + stations_in_cluster,
     )
-    if selected_station == "(nenhuma)":
+    if selected_station == "(none)":
         selected_station = None
 
     st.divider()
 
     # Split temporal
-    st.caption("**Split temporal**")
-    st.caption(f"Treino: `{TRAIN_PERIOD[0]}` → `{TRAIN_PERIOD[1]}`")
-    st.caption(f"Validação: `{VAL_PERIOD[0]}` → `{VAL_PERIOD[1]}`")
+    st.caption("**Temporal Split**")
+    st.caption(f"Train: `{TRAIN_PERIOD[0]}` → `{TRAIN_PERIOD[1]}`")
+    st.caption(f"Validation: `{VAL_PERIOD[0]}` → `{VAL_PERIOD[1]}`")
 
     has_counts = "n_train" in results_df.columns
     if has_counts:
         total_train = int(results_df["n_train"].sum())
         total_val = int(results_df["n_val"].sum())
         st.caption(
-            f"Amostras treino: **{total_train:,}**  |  "
-            f"Validação: **{total_val:,}**"
+            f"Train samples: **{total_train:,}**  |  "
+            f"Validation: **{total_val:,}**"
         )
 
 
@@ -255,7 +255,7 @@ def build_map(sel_station: str | None = None) -> go.Figure:
     texts: list[str] = []
     for i, r in enumerate(results_df.itertuples()):
         htext = (
-            f"Cluster {r.cluster_id}<br>Estações: {r.n_stations}"
+            f"Cluster {r.cluster_id}<br>Stations: {r.n_stations}"
             f"<br>R²: {r.MLP_R2:.3f}<br>RMSE: {r.MLP_RMSE:.3f}"
         )
         for m in CLUSTER_MEMBERS.get(r.cluster_id, []):
@@ -302,7 +302,7 @@ def build_map(sel_station: str | None = None) -> go.Figure:
                 "Lat: %{lat:.2f}°  Lon: %{lon:.2f}°"
                 "<extra></extra>"
             ),
-            name="Estações",
+            name="Stations",
         ))
 
     fig.update_layout(
@@ -322,9 +322,9 @@ def build_timeseries(estacao: str | None) -> go.Figure:
     fig = go.Figure()
     if estacao is None or preds_df.empty:
         fig.update_layout(
-            title="Selecione uma estação na sidebar ou no mapa",
+            title="Select a station in the sidebar or on the map",
             template="plotly_white", height=420,
-            xaxis_title="Data", yaxis_title=YAXIS_WIND,
+            xaxis_title="Date", yaxis_title=YAXIS_WIND,
         )
         return fig
 
@@ -335,12 +335,12 @@ def build_timeseries(estacao: str | None) -> go.Figure:
 
     fig.add_trace(go.Scatter(
         x=df_st["time"], y=df_st["y_true"],
-        name="INMET observado",
+        name="Observed INMET",
         line={"color": "royalblue", "width": 1.5},
     ))
     fig.add_trace(go.Scatter(
         x=df_st["time"], y=df_st["y_pred"],
-        name="MLP predito",
+        name="Predicted MLP",
         line={"color": "darkorange", "width": 1.5},
     ))
     fig.add_trace(go.Scatter(
@@ -350,10 +350,10 @@ def build_timeseries(estacao: str | None) -> go.Figure:
     ))
     fig.update_layout(
         title=(
-            f"Estação {estacao} — Cluster {cid}"
+            f"Station {estacao} — Cluster {cid}"
             f"  |  R²={r2:.3f}  RMSE={rmse:.2f} m/s"
         ),
-        xaxis_title="Data", yaxis_title=YAXIS_WIND,
+        xaxis_title="Date", yaxis_title=YAXIS_WIND,
         template="plotly_white", height=420,
         legend={"orientation": "h", "y": -0.18},
         margin={"t": 50, "b": 70},
@@ -365,7 +365,7 @@ def build_distribution(sel_cluster: int | None) -> go.Figure:
     if preds_df.empty:
         fig = go.Figure()
         fig.update_layout(
-            title="predictions_by_station.csv não encontrado",
+            title="predictions_by_station.csv not found",
             template="plotly_white", height=400,
         )
         return fig
@@ -388,7 +388,7 @@ def build_distribution(sel_cluster: int | None) -> go.Figure:
             meanline_visible=True,
             hovertemplate=(
                 f"Cluster {cid} — INMET<br>"
-                "Valor: %{y:.2f} m/s<extra></extra>"
+                "Value: %{y:.2f} m/s<extra></extra>"
             ),
         ))
         fig.add_trace(go.Violin(
@@ -403,18 +403,18 @@ def build_distribution(sel_cluster: int | None) -> go.Figure:
             meanline_visible=True,
             hovertemplate=(
                 f"Cluster {cid} — MLP<br>"
-                "Valor: %{y:.2f} m/s<extra></extra>"
+                "Value: %{y:.2f} m/s<extra></extra>"
             ),
         ))
 
     p90 = preds_df["y_true"].quantile(0.9)
     fig.add_hline(
         y=p90, line_dash="dot", line_color="gray",
-        annotation_text="P90 global", annotation_position="top right",
+        annotation_text="Global P90", annotation_position="top right",
     )
     fig.update_layout(
         title=(
-            "Distribuição por Cluster — INMET (esq.) vs MLP (dir.)"
+            "Distribution by Cluster — INMET (left) vs MLP (right)"
         ),
         yaxis_title=YAXIS_WIND, xaxis_title="Cluster",
         violingap=0.1, violinmode="overlay",
@@ -429,7 +429,7 @@ def build_scatter(sel_cluster: int | None) -> go.Figure:
     if preds_df.empty:
         fig = go.Figure()
         fig.update_layout(
-            title="predictions_by_station.csv não encontrado",
+            title="predictions_by_station.csv not found",
             template="plotly_white", height=400,
         )
         return fig
@@ -481,15 +481,15 @@ def build_scatter(sel_cluster: int | None) -> go.Figure:
             opacity=opacity,
             line={"color": color, "width": 2},
             hovertemplate=(
-                f"Cluster {cid} — regressão<br>"
+                f"Cluster {cid} — regression<br>"
                 f"a={coeffs[0]:.2f}  b={coeffs[1]:.2f}<extra></extra>"
             ),
         ))
 
     fig.update_layout(
-        title="Observado × Predito (linha = regressão OLS)",
-        xaxis_title=f"Observado — {YAXIS_WIND}",
-        yaxis_title=f"Predito — {YAXIS_WIND}",
+        title="Observed vs Predicted (line = OLS regression)",
+        xaxis_title=f"Observed — {YAXIS_WIND}",
+        yaxis_title=f"Predicted — {YAXIS_WIND}",
         template="plotly_white", height=400,
         legend={"orientation": "h", "y": -0.22, "font": {"size": 10}},
         margin={"t": 50, "b": 80},
@@ -533,8 +533,8 @@ def build_importance(cluster_id: int) -> go.Figure:
     ))
     fig.add_vline(x=0, line_color="black", line_width=0.8)
     fig.update_layout(
-        title=f"Importância por Permutação — Cluster {cluster_id}",
-        xaxis_title="Queda em R²",
+        title=f"Permutation Importance — Cluster {cluster_id}",
+        xaxis_title="Drop in R²",
         template="plotly_white", height=480,
         margin={"t": 50, "l": 160},
     )
@@ -560,7 +560,7 @@ def build_lazy_bar(cluster_id: int) -> go.Figure:
         hovertemplate="<b>%{y}</b><br>R²: %{x:.4f}<extra></extra>",
     ))
     fig.update_layout(
-        title=f"Top {TOP_N} — Cluster {cluster_id} (laranja = MLP)",
+        title=f"Top {TOP_N} — Cluster {cluster_id} (orange = MLP)",
         xaxis_title="R²",
         template="plotly_white", height=520,
         margin={"t": 55, "l": 220, "r": 60},
@@ -573,7 +573,7 @@ def build_lazy_bar(cluster_id: int) -> go.Figure:
 
 
 def build_lazy_comparison(exps: list[dict]) -> go.Figure:
-    """Barras agrupadas: best R² por cluster × experimento."""
+    """Grouped bars: best R² per cluster × experiment."""
     frames = []
     for e in exps:
         _csv = str(Path(e["dir"]) / "lazy_cluster_results.csv")
@@ -611,7 +611,7 @@ def build_lazy_comparison(exps: list[dict]) -> go.Figure:
 
     fig.update_layout(
         barmode="group",
-        title="Melhor R² por cluster × experimento",
+        title="Best R² per cluster × experiment",
         xaxis_title="Cluster",
         yaxis_title="R² (best model)",
         template="plotly_white",
@@ -623,7 +623,7 @@ def build_lazy_comparison(exps: list[dict]) -> go.Figure:
 
 
 def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
-    """Tabela com ΔR² e ΔRMSE de cada experimento vs baseline por cluster."""
+    """Table with ΔR² and ΔRMSE for each experiment vs baseline per cluster."""
     dfs: dict[str, pd.DataFrame] = {}
     for e in exps:
         df = load_lazy(str(Path(e["dir"]) / "lazy_cluster_results.csv"))
@@ -654,9 +654,9 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
                 best.loc[cid, "Model"] if cid in best.index else ""
             )
             rows.append({
-                "Experimento": exp_id,
+                "Experiment": exp_id,
                 "Cluster": cid,
-                "Melhor Modelo": modelo,
+                "Best Model": modelo,
                 "R²": round(r2, 4),
                 "RMSE": round(rmse, 4),
                 "ΔR²": round(r2 - r2_b, 4),
@@ -669,16 +669,16 @@ def build_lazy_delta_table(exps: list[dict], baseline_id: str) -> pd.DataFrame:
 
 SEASONS_ORDER = ["DJF", "MAM", "JJA", "SON"]
 SEASON_PT = {
-    "DJF": "Verão (DJF)", "MAM": "Outono (MAM)",
-    "JJA": "Inverno (JJA)", "SON": "Primavera (SON)",
+    "DJF": "Summer (DJF)", "MAM": "Autumn (MAM)",
+    "JJA": "Winter (JJA)", "SON": "Spring (SON)",
 }
-# Escala divergente CVD-segura, centrada em R²=0 (vermelho=ruim ↔ azul=bom)
+# CVD-safe diverging scale, centered at R²=0 (red=bad ↔ blue=good)
 R2_COLORSCALE = "RdBu"
 
 
 def _gains_metric(frames: list[pd.DataFrame]) -> str:
-    """Métrica ÚNICA para toda a comparação: R² de deploy só se TODOS os
-    experimentos a tiverem (comparação apples-to-apples); senão R² bruto."""
+    """UNIQUE metric for the whole comparison: Deploy R² only if ALL
+    experiments have it (apples-to-apples comparison); otherwise raw R²."""
     all_have_deploy = all(
         "R2_deploy_mean" in f.columns and f["R2_deploy_mean"].notna().any()
         for f in frames
@@ -686,12 +686,18 @@ def _gains_metric(frames: list[pd.DataFrame]) -> str:
     return "R2_deploy_mean" if all_have_deploy else "R-Squared"
 
 
-def build_gains_long(exps: list[dict]) -> pd.DataFrame:
-    """Melhor modelo por (experimento, cluster, trimestre).
+def build_gains_long(
+    exps: list[dict], force_raw: bool = False
+) -> pd.DataFrame:
+    """Best model by (experiment, cluster, season).
 
-    Métrica única em toda a matriz (ver _gains_metric). Experimentos SEM
-    estratificação sazonal preenchem os 4 trimestres com o modelo global
+    Unique metric across the matrix (see _gains_metric). Experiments WITHOUT
+    estratificação sazonal preenchem os 4 trimestres com o global model
     (marcado is_global=True → sufixo ** na exibição).
+
+    ``force_raw`` forces raw R² ("R-Squared") across the matrix — used
+    when there are deep learning experiments in the comparison (which only have R²
+    validation), to keep everything apples-to-apples.
     """
     loaded = []
     for e in exps:
@@ -704,7 +710,10 @@ def build_gains_long(exps: list[dict]) -> pd.DataFrame:
     if not loaded:
         return pd.DataFrame()
 
-    metric = _gains_metric([df for _, df in loaded])
+    metric = (
+        "R-Squared" if force_raw
+        else _gains_metric([df for _, df in loaded])
+    )
 
     rows: list[dict] = []
     for e, df in loaded:
@@ -744,7 +753,7 @@ def build_gains_long(exps: list[dict]) -> pd.DataFrame:
 
 
 def build_gains_heatmap(long_df: pd.DataFrame, cid: str) -> go.Figure:
-    """Heatmap experimentos (linhas) × trimestres (colunas) para um cluster."""
+    """Heatmap experiments (rows) × seasons (columns) for a cluster."""
     sub = long_df[long_df["cluster_id"].astype(str) == str(cid)]
     exp_order = sorted(sub["exp"].unique(), key=lambda s: (
         int(m.group()) if (m := re.search(r"\d+", s)) else 0
@@ -765,9 +774,9 @@ def build_gains_heatmap(long_df: pd.DataFrame, cid: str) -> go.Figure:
             tr.append(f"{r2:.3f}{flag}")
             hr.append(
                 f"<b>{exp}</b> — {SEASON_PT[season]}<br>"
-                f"Modelo: {cell.iloc[0]['model']}<br>"
-                f"R² deploy: {r2:.3f}"
-                + ("<br><i>modelo global (**)</i>" if flag else "")
+                f"Model: {cell.iloc[0]['model']}<br>"
+                f"Deploy R²: {r2:.3f}"
+                + ("<br><i>global model (**)</i>" if flag else "")
             )
         z.append(zr)
         text.append(tr)
@@ -796,29 +805,29 @@ def build_gains_heatmap(long_df: pd.DataFrame, cid: str) -> go.Figure:
 
 # ── Layout principal ──────────────────────────────────────────────────────────
 
-st.title("Correção de Viés de Rajadas de Vento Extremo")
+st.title("Extreme Wind Gust Bias Correction")
 
 tab_mlp, tab_lazy, tab_gains, tab_dl = st.tabs(
-    ["Explorador MLP", "Screening LazyPredict",
-     "Ganhos por Experimento", "Deep Learning"]
+    ["MLP Explorer", "LazyPredict Screening",
+     "Gains per Experiment", "Deep Learning"]
 )
 
 # ── Aba 1: Explorador MLP ─────────────────────────────────────────────────────
 
 with tab_mlp:
 
-    # Seletor de experimento (grava em st.session_state["mlp_exp_id"],
-    # lido pela sidebar para carregar os dados deste experimento).
+    # Experiment selector (saves to st.session_state["mlp_exp_id"],
+    # read by the sidebar to load the data for this experiment).
     col_exp, _col_pad = st.columns([1, 2])
     with col_exp:
         st.selectbox(
-            "Experimento (MLP)",
-            [e["id"] for e in mlp_experiments] or ["(nenhum)"],
+            "Experiment (MLP)",
+            [e["id"] for e in mlp_experiments] or ["(none)"],
             format_func=lambda i: _mlp_by_id.get(i, {}).get("label", i),
             key="mlp_exp_id",
         )
 
-    # Linha 1: Mapa + Série temporal
+    # Row 1: Map + Time series
     col_map, col_ts = st.columns(2)
 
     with col_map:
@@ -829,7 +838,7 @@ with tab_mlp:
             key="map_chart",
             selection_mode="points",
         )
-        # Capturar clique em estação no mapa
+        # Capture click on station in the map
         if (
             event
             and hasattr(event, "selection")
@@ -849,7 +858,7 @@ with tab_mlp:
             width="stretch",
         )
 
-    # Linha 2: Distribuição + Scatter
+    # Row 2: Distribution + Scatter
     col_dist, col_scat = st.columns(2)
 
     with col_dist:
@@ -864,12 +873,12 @@ with tab_mlp:
             width="stretch",
         )
 
-    # Linha 3: Métricas + Importância
+    # Row 3: Metrics + Importance
     col_met, col_imp = st.columns(2)
 
     with col_met:
         metric = st.selectbox(
-            "Métrica",
+            "Metric",
             ["RMSE", "RMSE_P90", "Bias_P90"],
             key="metric_sel",
         )
@@ -915,10 +924,10 @@ with tab_mlp:
 
 with tab_lazy:
     st.info(
-        "Screening de 43 modelos via LazyPredict por cluster espacial "
-        "(treino 2000–2022 / validação 2023). "
-        "O **MLPRegressor** (laranja) lidera em 3 de 6 clusters e aparece "
-        "no top-3 em outros 2, justificando sua escolha como modelo principal.",
+        "Screening of 43 models via LazyPredict per spatial cluster "
+        "(train 2000–2022 / validation 2023). "
+        "The **MLPRegressor** (orange) leads in 3 out of 6 clusters and appears "
+        "in the top-3 in 2 others, justifying its choice as the main model.",
         icon="ℹ️",
     )
 
@@ -926,10 +935,10 @@ with tab_lazy:
         LAZY_DIR, "lazy_cluster_results.csv"
     )
     _lazy_by_id = {e["id"]: e for e in lazy_experiments}
-    _lazy_ids = [e["id"] for e in lazy_experiments] or ["(nenhum)"]
+    _lazy_ids = [e["id"] for e in lazy_experiments] or ["(none)"]
 
     sub_ranking, sub_compare = st.tabs(
-        ["Ranking por experimento", "Comparação entre experimentos"]
+        ["Ranking per experiment", "Comparison between experiments"]
     )
 
     # ── Sub-aba: Ranking ──────────────────────────────────────────────────
@@ -937,7 +946,7 @@ with tab_lazy:
         col_lexp, col_lcid = st.columns(2)
         with col_lexp:
             lazy_exp_id = st.selectbox(
-                "Experimento (Lazy)",
+                "Experiment (Lazy)",
                 _lazy_ids,
                 format_func=lambda i: _lazy_by_id.get(i, {}).get("label", i),
                 key="lazy_exp_sel",
@@ -998,14 +1007,14 @@ with tab_lazy:
     with sub_compare:
         if len(lazy_experiments) < 2:
             st.info(
-                "Execute ao menos dois experimentos para comparar.",
+                "Run at least two experiments to compare.",
                 icon="ℹ️",
             )
         else:
             col_base, _ = st.columns([1, 2])
             with col_base:
                 baseline_id = st.selectbox(
-                    "Baseline (referência)",
+                    "Baseline (reference)",
                     _lazy_ids,
                     format_func=lambda i: (
                         _lazy_by_id.get(i, {}).get("label", i)
@@ -1086,32 +1095,77 @@ def load_lstm_arch(exp_dir: str, cid) -> dict:
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+def build_lstm_gains_rows(lstm_exps: list[dict]) -> list[dict]:
+    """Rows in the schema of ``build_gains_long`` from LSTM results.
+
+    Deep learning is not stratified by season → replicates the R² of
+    validation (``val_R2``) in the 4 seasons (is_global=True → suffix **).
+    Metric always raw validation R², comparable to ``R-Squared`` from
+    LazyPredict (both evaluated on the validation split).
+    """
+    rows: list[dict] = []
+    for e in lstm_exps:
+        df = load_lstm_results(e["dir"])
+        if df.empty or "val_R2" not in df.columns:
+            continue
+        for r in df.itertuples():
+            cid = str(r.cluster_id)
+            for season in SEASONS_ORDER:
+                rows.append({
+                    "exp": f"LSTM·{e['id']}",
+                    "cluster_id": cid,
+                    "season": season,
+                    "model": "TR-LSTM",
+                    "r2": float(r.val_R2),
+                    "is_global": True,
+                    "metric": "R-Squared",
+                })
+    return rows
+
+
 with tab_gains:
-    st.subheader("Ganhos por Experimento — melhor modelo por cluster × trimestre")
+    st.subheader("Gains per Experiment — best model per cluster × season")
     gains_exps = discover_experiments(LAZY_DIR, "lazy_cluster_results.csv")
-    if not gains_exps:
-        st.info("Nenhum experimento LazyPredict encontrado.")
+    lstm_gains_exps = discover_lstm_experiments(LSTM_DIR)
+    if not gains_exps and not lstm_gains_exps:
+        st.info("No LazyPredict or LSTM experiments found.")
     else:
-        long_df = build_gains_long(gains_exps)
+        # Deep learning in comparison → force raw validation R² for
+        # all (LSTM lacks deploy R²), keeping apples-to-apples.
+        long_df = build_gains_long(
+            gains_exps, force_raw=bool(lstm_gains_exps)
+        )
+        lstm_rows = build_lstm_gains_rows(lstm_gains_exps)
+        if lstm_rows:
+            long_df = pd.concat(
+                [long_df, pd.DataFrame(lstm_rows)], ignore_index=True
+            )
         if long_df.empty:
-            st.info("Sem métricas para exibir.")
+            st.info("No metrics to display.")
         else:
             metric_used = long_df["metric"].iloc[0]
             metric_lbl = (
-                "R² de deploy (mensal)" if metric_used == "R2_deploy_mean"
-                else "R² bruto (anual)"
+                "Deploy R² (monthly)" if metric_used == "R2_deploy_mean"
+                else "Raw R² (validation)"
             )
             st.caption(
-                f"Métrica: **{metric_lbl}** (`{metric_used}`) — melhor modelo "
-                "por cluster e trimestre climático. Experimentos **não** "
-                "estratificados por estação repetem o valor do modelo global "
-                "nos 4 trimestres, marcados com **."
+                f"Metric: **{metric_lbl}** (`{metric_used}`) — best model "
+                "per cluster and climatic season. Compares LazyPredict/MLP "
+                "with deep learning (**TR-LSTM**). Experiments **not** "
+                "stratified by season (including LSTM) repeat the value "
+                "of the global model across the 4 seasons, marked with **."
             )
-            if metric_used != "R2_deploy_mean":
+            if lstm_gains_exps:
                 st.caption(
-                    "ℹ️ Usando R² bruto porque nem todos os experimentos têm "
-                    "R² de deploy — troca automática para deploy quando todos "
-                    "tiverem (comparação apples-to-apples)."
+                    "ℹ️ Since deep learning is included in the comparison, the entire matrix "
+                    "uses raw validation R² — LSTM lacks deploy R², "
+                    "so this is the common metric for all."
+                )
+            elif metric_used != "R2_deploy_mean":
+                st.caption(
+                    "ℹ️ Using raw R² because not all experiments have "
+                    "deploy R² — automatic switch to deploy when all "
+                    "have it (apples-to-apples comparison)."
                 )
             g_clusters = sorted(
                 long_df["cluster_id"].astype(str).unique(),
@@ -1128,30 +1182,30 @@ with tab_gains:
                 use_container_width=True,
             )
             st.caption(
-                "Linhas = experimentos (de cima para baixo, mais recentes). "
-                "Azul = R² maior; vermelho = R² ≤ 0. "
-                "** = métrica do modelo global aplicada ao trimestre."
+                "Rows = experiments (top to bottom, most recent). "
+                "Blue = higher R²; red = R² ≤ 0. "
+                "** = global model metric applied to the season."
             )
 
-            with st.expander("Tabela detalhada — R² e modelo por trimestre"):
+            with st.expander("Detailed table — R² and model per season"):
                 tbl = long_df.copy()
-                tbl["Trimestre"] = tbl["season"].map(SEASON_PT)
+                tbl["Season"] = tbl["season"].map(SEASON_PT)
                 tbl["R²"] = tbl.apply(
                     lambda r: f"{r['r2']:.3f}{'**' if r['is_global'] else ''}",
                     axis=1,
                 )
                 cols_order = [SEASON_PT[s] for s in SEASONS_ORDER]
                 r2_piv = tbl.pivot_table(
-                    index=["exp", "cluster_id"], columns="Trimestre",
+                    index=["exp", "cluster_id"], columns="Season",
                     values="R²", aggfunc="first",
                 ).reindex(columns=cols_order)
                 mdl_piv = tbl.pivot_table(
-                    index=["exp", "cluster_id"], columns="Trimestre",
+                    index=["exp", "cluster_id"], columns="Season",
                     values="model", aggfunc="first",
                 ).reindex(columns=cols_order)
-                st.markdown("**R² de deploy**")
+                st.markdown("**Deploy R²**")
                 st.dataframe(r2_piv, use_container_width=True)
-                st.markdown("**Modelo escolhido**")
+                st.markdown("**Chosen model**")
                 st.dataframe(mdl_piv, use_container_width=True)
 
 
@@ -1160,15 +1214,15 @@ with tab_dl:
     dl_exps = discover_lstm_experiments(LSTM_DIR)
     if not dl_exps:
         st.info(
-            f"Nenhum experimento LSTM em `{LSTM_DIR}`. Copie a pasta do "
-            "experimento (ex.: `lstm_v2/`) para esse diretório."
+            f"No LSTM experiment in `{LSTM_DIR}`. Copy the experiment folder "
+            "(e.g., `lstm_v2/`) to this directory."
         )
     else:
         by_id = {e["id"]: e for e in dl_exps}
         c1, c2 = st.columns([1, 1])
         with c1:
             dl_exp = st.selectbox(
-                "Experimento (LSTM)", list(by_id), key="dl_exp_id"
+                "Experiment (LSTM)", list(by_id), key="dl_exp_id"
             )
         exp_dir = by_id[dl_exp]["dir"]
         dl_results = load_lstm_results(exp_dir)
@@ -1190,7 +1244,7 @@ with tab_dl:
             m4.metric("test R²", f"{row.get('test_R2', float('nan')):.3f}")
 
         sub_loss, sub_scatter, sub_arch = st.tabs(
-            ["Curva de Loss", "Scatter Obs×Pred", "Arquitetura & Pesos"]
+            ["Loss Curve", "Scatter Obs×Pred", "Architecture & Weights"]
         )
 
         with sub_loss:
@@ -1202,26 +1256,26 @@ with tab_dl:
                 )
                 if png.exists():
                     st.caption(
-                        "Série de loss não disponível como dado neste "
-                        "experimento — exibindo o PNG gerado no treino."
+                        "Loss series not available as data in this "
+                        "experiment — showing the PNG generated during training."
                     )
                     st.image(str(png), use_container_width=True)
                 else:
-                    st.warning("Sem loss_history para este cluster.")
+                    st.warning("No loss_history for this cluster.")
             else:
                 st.line_chart(
                     loss.set_index("epoch")[["train_loss", "val_loss"]]
                 )
                 best_ep = int(loss["val_loss"].idxmin()) + 1
                 st.caption(
-                    f"{len(loss)} épocas | melhor val = "
-                    f"{loss['val_loss'].min():.4f} (época {best_ep})"
+                    f"{len(loss)} epochs | best val = "
+                    f"{loss['val_loss'].min():.4f} (epoch {best_ep})"
                 )
 
         with sub_scatter:
             preds = load_lstm_preds(exp_dir, dl_cid)
             if preds.empty:
-                st.warning("Sem predictions para este cluster.")
+                st.warning("No predictions for this cluster.")
             else:
                 split = st.radio(
                     "Split", ["val", "test", "train"],
@@ -1229,7 +1283,7 @@ with tab_dl:
                 )
                 sub = preds[preds["split"] == split]
                 if sub.empty:
-                    st.info(f"Sem dados para o split '{split}'.")
+                    st.info(f"No data for split '{split}'.")
                 else:
                     lo = float(min(sub["y_true"].min(), sub["y_pred"].min()))
                     hi = float(max(sub["y_true"].max(), sub["y_pred"].max()))
@@ -1244,8 +1298,8 @@ with tab_dl:
                         line=dict(dash="dash", color="black"), name="1:1",
                     ))
                     fig.update_layout(
-                        xaxis_title="Observado (m/s)",
-                        yaxis_title="Predito (m/s)",
+                        xaxis_title="Observed (m/s)",
+                        yaxis_title="Predicted (m/s)",
                         height=520, margin=dict(l=10, r=10, t=30, b=10),
                     )
                     fig.update_yaxes(scaleanchor="x", scaleratio=1)
@@ -1254,19 +1308,19 @@ with tab_dl:
         with sub_arch:
             arch = load_lstm_arch(exp_dir, dl_cid)
             if not arch:
-                st.warning("Sem architecture json para este cluster.")
+                st.warning("No architecture json for this cluster.")
             else:
                 st.markdown(
                     f"**{arch['model']}** — "
-                    f"{arch['total_params']:,} parâmetros"
+                    f"{arch['total_params']:,} parameters"
                 )
                 st.json(arch.get("hyperparams", {}), expanded=False)
                 layers = pd.DataFrame([
                     {
-                        "camada": ly["name"],
+                        "layer": ly["name"],
                         "shape": "×".join(map(str, ly["shape"])),
                         "params": ly["params"],
-                        "média": round(ly["mean"], 4),
+                        "mean": round(ly["mean"], 4),
                         "std": round(ly["std"], 4),
                     }
                     for ly in arch["layers"]
@@ -1279,7 +1333,7 @@ with tab_dl:
                 ]
                 if hist_layers:
                     sel = st.selectbox(
-                        "Histograma de pesos — camada",
+                        "Weights histogram — layer",
                         [ly["name"] for ly in hist_layers],
                         key="dl_hist_layer",
                     )
@@ -1292,12 +1346,12 @@ with tab_dl:
                         for i in range(len(edges) - 1)
                     ]
                     hist_df = pd.DataFrame(
-                        {"peso": centers, "contagem": lyr["hist_counts"]}
-                    ).set_index("peso")
+                        {"weight": centers, "count": lyr["hist_counts"]}
+                    ).set_index("weight")
                     st.bar_chart(hist_df)
 
         st.divider()
         st.caption(
-            "Modelo: **TR-LSTM** — ref: *LSTM and Transformer-based "
+            "Model: **TR-LSTM** — ref: *LSTM and Transformer-based "
             "framework for bias correction of ERA5 hourly wind speeds*."
         )
