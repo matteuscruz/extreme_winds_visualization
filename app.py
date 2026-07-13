@@ -43,6 +43,13 @@ LAZY_DIR = Path("artifacts/lazy_clusters")
 LSTM_DIR = Path("artifacts/lstm_pytorch")
 SHP_PATH = Path("dataset/shp/shp_vento.shp")
 
+# Matriz de ablation (sincronizada de scripts/sync_ablation_to_dashboard.py no
+# repo de pesquisa) — fonte única de "qual experimento" pras abas MLP Explorer
+# e LazyPredict Screening, substituindo os antigos exp1-3/exp1-5 (baseline,
+# superados pela matriz). Ver seletor global "Configuration" no sidebar.
+ABLATION_DIR = Path("artifacts/ablation")
+ABLATION_ARMS = ["original", "synthetic", "newfeatures", "all"]
+
 TRAIN_PERIOD = ("2000-01-01", "2022-12-31")
 VAL_PERIOD = ("2023-01-01", "2023-12-31")
 
@@ -119,6 +126,20 @@ def discover_experiments(base: Path, results_name: str) -> list[dict]:
     return exps
 
 
+def discover_ablation_as_experiments(pipeline: str, results_name: str) -> list[dict]:
+    """Mesmo formato de retorno de discover_experiments ({id, dir, label}),
+    mas a lista de 'experimentos' são os 4 braços da matriz de ablation
+    (artifacts/ablation/<pipeline>/<arm>/) em vez de exp1/exp2/exp3 —
+    substitui a fonte, não mistura as duas (os antigos exp* nunca aparecem
+    aqui)."""
+    exps: list[dict] = []
+    for arm in ABLATION_ARMS:
+        d = ABLATION_DIR / pipeline / arm
+        if (d / results_name).exists():
+            exps.append({"id": arm, "dir": str(d), "label": arm})
+    return exps
+
+
 # ── Carregamento de dados (cacheado por experimento) ─────────────────────────
 
 @st.cache_data
@@ -177,21 +198,34 @@ geojson_clusters = load_geojson()
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
-# Experimentos MLP — descoberta única (o seletor fica na aba, ver tab_mlp)
-mlp_experiments = discover_experiments(ARTIFACTS, "mlp_cluster_results.csv")
+# Experimentos MLP — matriz de ablation (substitui os antigos exp1-3/exp1-5,
+# ver discover_ablation_as_experiments). Seletor único no sidebar
+# ("Configuration") dirige MLP Explorer e LazyPredict Screening ao mesmo tempo.
+mlp_experiments = discover_ablation_as_experiments("mlp", "mlp_cluster_results.csv")
 _mlp_by_id = {e["id"]: e for e in mlp_experiments}
-# Default: first experiment (exp1 = baseline)
 _mlp_default = mlp_experiments[0]["id"] if mlp_experiments else "(none)"
-if "mlp_exp_id" not in st.session_state:
-    st.session_state["mlp_exp_id"] = _mlp_default
+if "global_ablation_arm" not in st.session_state:
+    st.session_state["global_ablation_arm"] = _mlp_default
 
 with st.sidebar:
     st.title("🌬️ IRC Vendaval")
     st.caption("Extreme wind gust bias correction")
     st.divider()
 
-    # O experimento é escolhido na aba MLP (st.session_state["mlp_exp_id"]).
-    mlp_exp_id = st.session_state.get("mlp_exp_id", _mlp_default)
+    # Controle único: dirige MLP Explorer e LazyPredict Screening pro MESMO
+    # braço da matriz de ablation — não existe mais um seletor de experimento
+    # independente dentro de cada aba (evita mostrar resultados diferentes
+    # em abas diferentes).
+    st.selectbox(
+        "Configuration",
+        ABLATION_ARMS,
+        key="global_ablation_arm",
+        help=(
+            "Same configuration used by MLP Explorer and LazyPredict "
+            "Screening below — original / synthetic / newfeatures / all."
+        ),
+    )
+    mlp_exp_id = st.session_state["global_ablation_arm"]
     if mlp_exp_id not in _mlp_by_id:
         mlp_exp_id = _mlp_default
 
@@ -807,25 +841,21 @@ def build_gains_heatmap(long_df: pd.DataFrame, cid: str) -> go.Figure:
 
 st.title("Extreme Wind Gust Bias Correction")
 
-tab_mlp, tab_lazy, tab_gains, tab_dl = st.tabs(
+tab_mlp, tab_lazy, tab_gains, tab_dl, tab_ablation = st.tabs(
     ["MLP Explorer", "LazyPredict Screening",
-     "Gains per Experiment", "Deep Learning"]
+     "Gains per Experiment", "Deep Learning", "Model Comparison"]
 )
 
 # ── Aba 1: Explorador MLP ─────────────────────────────────────────────────────
 
 with tab_mlp:
 
-    # Experiment selector (saves to st.session_state["mlp_exp_id"],
-    # read by the sidebar to load the data for this experiment).
-    col_exp, _col_pad = st.columns([1, 2])
-    with col_exp:
-        st.selectbox(
-            "Experiment (MLP)",
-            [e["id"] for e in mlp_experiments] or ["(none)"],
-            format_func=lambda i: _mlp_by_id.get(i, {}).get("label", i),
-            key="mlp_exp_id",
-        )
+    # A configuração é escolhida no sidebar ("Configuration") — mesma fonte
+    # usada pela aba LazyPredict Screening, pra garantir que as duas mostrem
+    # sempre o mesmo resultado.
+    st.caption(f"Configuration: **{mlp_exp_id}**")
+    if mlp_exp_id not in _mlp_by_id:
+        st.warning(f"No synced MLP data for arm '{mlp_exp_id}' yet.")
 
     # Row 1: Map + Time series
     col_map, col_ts = st.columns(2)
@@ -931,9 +961,7 @@ with tab_lazy:
         icon="ℹ️",
     )
 
-    lazy_experiments = discover_experiments(
-        LAZY_DIR, "lazy_cluster_results.csv"
-    )
+    lazy_experiments = discover_ablation_as_experiments("lazy", "lazy_cluster_results.csv")
     _lazy_by_id = {e["id"]: e for e in lazy_experiments}
     _lazy_ids = [e["id"] for e in lazy_experiments] or ["(none)"]
 
@@ -943,14 +971,12 @@ with tab_lazy:
 
     # ── Sub-aba: Ranking ──────────────────────────────────────────────────
     with sub_ranking:
-        col_lexp, col_lcid = st.columns(2)
-        with col_lexp:
-            lazy_exp_id = st.selectbox(
-                "Experiment (Lazy)",
-                _lazy_ids,
-                format_func=lambda i: _lazy_by_id.get(i, {}).get("label", i),
-                key="lazy_exp_sel",
-            )
+        # Mesma configuração escolhida no sidebar ("Configuration") — igual à
+        # aba MLP Explorer, pra sempre refletir o mesmo resultado.
+        lazy_exp_id = st.session_state["global_ablation_arm"]
+        st.caption(f"Configuration: **{lazy_exp_id}**")
+        if lazy_exp_id not in _lazy_by_id:
+            st.warning(f"No synced Lazy data for arm '{lazy_exp_id}' yet.")
 
         _lazy_csv = (
             str(
@@ -965,6 +991,7 @@ with tab_lazy:
             lazy_df["cluster_id"].unique().tolist()
         )
 
+        col_lcid, _col_pad = st.columns(2)
         with col_lcid:
             lazy_cluster = st.selectbox(
                 "Cluster",
@@ -1355,3 +1382,389 @@ with tab_dl:
             "Model: **TR-LSTM** — ref: *LSTM and Transformer-based "
             "framework for bias correction of ERA5 hourly wind speeds*."
         )
+
+
+# ── Helpers Ablation Study (matriz 3 pipelines × 4 braços) ───────────────────
+# Dados sincronizados do repo de pesquisa via
+# scripts/sync_ablation_to_dashboard.py (results.csv/predictions.csv -> Parquet),
+# schema tidy: pipeline, experiment, cluster_id, season, split, n_samples,
+# R2, RMSE, Bias, Bias_P90, RMSE_P90 — diferente do schema wide legado usado
+# pelas outras abas (mlp_cluster_results.csv / lazy_cluster_results.csv /
+# lstm_pytorch_results.csv), por isso ganha aba e loaders próprios.
+
+ABLATION_PIPELINES = ["lazy", "mlp", "lstm"]
+ABLATION_METRICS = ["R2", "RMSE", "Bias", "Bias_P90", "RMSE_P90"]
+# "ALL" = agregado do ano inteiro (já calculado pela pipeline); nunca deve ser
+# misturado com os trimestres individuais no mesmo agregado ponderado.
+ABLATION_SEASONS_ORDER = ["ALL", "DJF", "MAM", "JJA", "SON"]
+ABLATION_METRIC_DIRECTIONS = {
+    "R2": "higher", "RMSE": "lower", "Bias": "zero",
+    "Bias_P90": "zero", "RMSE_P90": "lower",
+}
+# Mesma paleta de scripts/_ablation_common.py no repo de pesquisa.
+ARM_COLORS = {
+    "original": "#2a78d6", "synthetic": "#1baf7a",
+    "newfeatures": "#c98a1f", "all": "#4a3aa7",
+}
+PIPELINE_LABELS = {"lazy": "LazyPredict", "mlp": "MLP", "lstm": "LSTM (TF dual-head)"}
+
+
+def discover_ablation_combos() -> list[dict]:
+    """Grade fixa 3×4 — sem ambiguidade de glob, só confere o que já foi sincronizado."""
+    combos = []
+    for pipeline in ABLATION_PIPELINES:
+        for arm in ABLATION_ARMS:
+            d = ABLATION_DIR / pipeline / arm
+            if (d / "results.parquet").exists():
+                combos.append({"pipeline": pipeline, "arm": arm, "dir": str(d)})
+    return combos
+
+
+@st.cache_data
+def load_ablation_results(combo_dir: str) -> pd.DataFrame:
+    path = Path(combo_dir) / "results.parquet"
+    return pd.read_parquet(path) if path.exists() else pd.DataFrame()
+
+
+@st.cache_data
+def load_ablation_predictions(combo_dir: str) -> pd.DataFrame:
+    path = Path(combo_dir) / "predictions.parquet"
+    return pd.read_parquet(path) if path.exists() else pd.DataFrame()
+
+
+def _ablation_select_split(df: pd.DataFrame) -> pd.DataFrame:
+    """Por (pipeline, arm), prefere split='test'; senão usa o único disponível."""
+    if df.empty:
+        return df
+    frames = []
+    for _, g in df.groupby(["pipeline", "arm"]):
+        splits = set(g["split"].unique())
+        chosen = "test" if "test" in splits else sorted(splits)[0]
+        frames.append(g[g["split"] == chosen])
+    return pd.concat(frames, ignore_index=True) if frames else df.iloc[0:0]
+
+
+# LazyPredict é a única pipeline que varia o tipo de modelo por cluster/trimestre
+# (results.csv já traz o vencedor de ~30 candidatos, escolhido pela própria
+# pipeline). MLP/LSTM usam sempre o mesmo tipo de modelo — label fixa aqui só
+# pra manter a coluna "Model" consistente nas 3 pipelines.
+MODEL_FALLBACK_LABEL = {"mlp": "MLPRegressor", "lstm": "LSTM (TF dual-head)"}
+
+
+def _model_summary(models: pd.Series) -> str:
+    """String compacta com os modelos vencedores e quantos clusters cada um
+    venceu, ex: 'CatBoostRegressor (3), TweedieRegressor (2), ...' —
+    responde 'qual modelo teve a melhor métrica' de forma transparente em
+    vez de esconder atrás de uma média."""
+    counts = models.value_counts()
+    return ", ".join(f"{name} ({n})" for name, n in counts.items())
+
+
+def _ablation_aggregate(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+    """Agrega sobre season (média ponderada por n_samples)."""
+    if df.empty:
+        return df
+    rows = []
+    for key, g in df.groupby(group_cols):
+        w = g["n_samples"]
+        key_tuple = key if isinstance(key, tuple) else (key,)
+        row = dict(zip(group_cols, key_tuple))
+        for m in ABLATION_METRICS:
+            row[m] = float(np.average(g[m], weights=w)) if w.sum() > 0 else float("nan")
+        if "model" in g.columns and g["model"].notna().any():
+            row["Model"] = _model_summary(g["model"].dropna())
+        else:
+            pipeline = row.get("pipeline")
+            row["Model"] = MODEL_FALLBACK_LABEL.get(pipeline, "—")
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def load_all_ablation(combos: list[dict]) -> pd.DataFrame:
+    frames = []
+    for c in combos:
+        df = load_ablation_results(c["dir"])
+        if df.empty:
+            continue
+        df = df.copy()
+        df["pipeline"] = c["pipeline"]
+        df["arm"] = c["arm"]
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def build_ablation_bars(summary_df: pd.DataFrame, metric: str) -> go.Figure:
+    """Barras agrupadas: metric por pipeline, cor = braço de ablation."""
+    fig = go.Figure()
+    if summary_df.empty:
+        return fig
+    pipelines = [p for p in ABLATION_PIPELINES if p in summary_df["pipeline"].unique()]
+    arms = [a for a in ABLATION_ARMS if a in summary_df["arm"].unique()]
+    for arm in arms:
+        sub = summary_df[summary_df["arm"] == arm].set_index("pipeline")
+        y = [sub[metric].get(p, float("nan")) for p in pipelines]
+        models = [sub["Model"].get(p, "—") if "Model" in sub.columns else "—" for p in pipelines]
+        fig.add_trace(go.Bar(
+            name=arm,
+            x=[PIPELINE_LABELS.get(p, p) for p in pipelines],
+            y=y,
+            marker_color=ARM_COLORS.get(arm, "#898781"),
+            text=[f"{v:.3f}" if v == v else "" for v in y],
+            textposition="outside",
+            customdata=models,
+            hovertemplate=(
+                f"<b>{arm}</b><br>%{{x}}<br>{metric}: %{{y:.4f}}"
+                "<br>Model(s): %{customdata}<extra></extra>"
+            ),
+        ))
+    direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
+    hint = {
+        "higher": "higher is better", "lower": "lower is better",
+        "zero": "closer to 0 is better",
+    }[direction]
+    fig.update_layout(
+        barmode="group",
+        title=f"{metric} by pipeline × configuration ({hint})",
+        yaxis_title=metric,
+        template="plotly_white", height=440,
+        legend={"orientation": "h", "y": -0.22},
+        margin={"t": 55, "b": 80},
+    )
+    return fig
+
+
+def build_ablation_heatmap(summary_df: pd.DataFrame, metric: str) -> go.Figure:
+    if summary_df.empty:
+        return go.Figure()
+    df = summary_df.copy()
+    df["combo"] = df["pipeline"].map(lambda p: PIPELINE_LABELS.get(p, p)) + " / " + df["arm"]
+    df = df.sort_values(["pipeline", "arm"])
+    direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
+    z = (
+        df[metric] if direction == "higher"
+        else (-df[metric] if direction == "lower" else -df[metric].abs())
+    )
+    fig = go.Figure(go.Heatmap(
+        z=[z.tolist()],
+        x=df["combo"].tolist(),
+        y=[metric],
+        colorscale=R2_COLORSCALE,
+        text=[df[metric].round(3).tolist()],
+        texttemplate="%{text}",
+        showscale=False,
+    ))
+    fig.update_layout(
+        title=f"{metric} — all 12 combinations",
+        template="plotly_white", height=220,
+        margin={"t": 45, "b": 90, "l": 60},
+    )
+    fig.update_xaxes(tickangle=45)
+    return fig
+
+
+def build_ablation_delta_table(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    """Delta de cada braço vs. o braço 'original' da MESMA pipeline."""
+    if df.empty:
+        return df
+    rows = []
+    for pipeline, g in df.groupby("pipeline"):
+        g = g.set_index("arm")
+        if "original" not in g.index:
+            continue
+        base = g.loc["original", metric]
+        for arm in ABLATION_ARMS:
+            if arm not in g.index:
+                continue
+            val = g.loc[arm, metric]
+            rows.append({
+                "Pipeline": PIPELINE_LABELS.get(pipeline, pipeline),
+                "Arm": arm,
+                "Model": g.loc[arm, "Model"] if "Model" in g.columns else "—",
+                metric: round(val, 4),
+                f"Δ{metric}": round(val - base, 4),
+            })
+    return pd.DataFrame(rows)
+
+
+def build_ablation_scatter(pred_df: pd.DataFrame, pipeline: str, arm: str) -> go.Figure:
+    fig = go.Figure()
+    if pred_df.empty:
+        fig.update_layout(
+            title="No prediction rows available for this combination",
+            template="plotly_white", height=480,
+        )
+        return fig
+    fig.add_trace(go.Scatter(
+        x=pred_df["y_true"], y=pred_df["y_pred"],
+        mode="markers",
+        marker={"size": 5, "color": ARM_COLORS.get(arm, "#898781"), "opacity": 0.5},
+        hovertemplate="Observed: %{x:.2f}<br>Predicted: %{y:.2f}<extra></extra>",
+        name=f"{pipeline}/{arm}",
+    ))
+    lo = min(pred_df["y_true"].min(), pred_df["y_pred"].min())
+    hi = max(pred_df["y_true"].max(), pred_df["y_pred"].max())
+    fig.add_trace(go.Scatter(
+        x=[lo, hi], y=[lo, hi], mode="lines",
+        line={"color": "#898781", "dash": "dash"}, name="y = x", showlegend=False,
+    ))
+    fig.update_layout(
+        title=f"Observed vs. Predicted — {PIPELINE_LABELS.get(pipeline, pipeline)} / {arm}",
+        xaxis_title="Observed (m/s)", yaxis_title="Predicted (m/s)",
+        template="plotly_white", height=480,
+        margin={"t": 50, "l": 10, "r": 10, "b": 10},
+    )
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    return fig
+
+
+# ── Aba 5: Ablation Study ─────────────────────────────────────────────────────
+
+with tab_ablation:
+    ablation_combos = discover_ablation_combos()
+
+    if not ablation_combos:
+        st.info(
+            "No results synced yet. Run "
+            "`scripts/sync_ablation_to_dashboard.py` from the research repo "
+            "after a pipeline finishes.",
+            icon="ℹ️",
+        )
+    else:
+        st.caption(
+            f"{len(ablation_combos)}/12 combinations synced "
+            "(3 pipelines × 4 configurations: original / synthetic / newfeatures / all)."
+        )
+
+        sub_compare, sub_drill = st.tabs(
+            ["Comparison (all combinations)", "Single combination"]
+        )
+
+        with sub_compare:
+            all_results = load_all_ablation(ablation_combos)
+            available_seasons = [
+                s for s in ABLATION_SEASONS_ORDER
+                if s in all_results["season"].unique()
+            ] if not all_results.empty else []
+
+            available_clusters = (
+                sorted(all_results["cluster_id"].unique(), key=str)
+                if not all_results.empty else []
+            )
+
+            col_metric, col_season, col_cluster = st.columns([1, 1, 1])
+            with col_metric:
+                metric = st.selectbox(
+                    "Metric", ABLATION_METRICS, key="ablation_metric"
+                )
+            with col_season:
+                season = st.selectbox(
+                    "Climate quarter (season)",
+                    available_seasons or ["ALL"],
+                    key="ablation_season",
+                )
+            with col_cluster:
+                cluster_choice = st.selectbox(
+                    "Cluster",
+                    ["All clusters (weighted avg)"] + [f"Cluster {c}" for c in available_clusters],
+                    key="ablation_cluster",
+                    help=(
+                        "The default blends all clusters via a weighted average, "
+                        "which can hide strong individual clusters — pick one to "
+                        "see its own metric, matching the 'Single combination' table."
+                    ),
+                )
+
+            by_season = all_results[all_results["season"] == season]
+            if by_season.empty:
+                st.info(
+                    f"No combination has data for season '{season}' yet — "
+                    "pipelines currently differ in season coverage "
+                    "(e.g. MLP only reports 'ALL' today).",
+                    icon="ℹ️",
+                )
+
+            by_cluster = by_season
+            if cluster_choice != "All clusters (weighted avg)":
+                chosen_cluster = cluster_choice.removeprefix("Cluster ")
+                by_cluster = by_season[by_season["cluster_id"].astype(str) == chosen_cluster]
+
+            selected = _ablation_select_split(by_cluster)
+            summary_df = _ablation_aggregate(selected, ["pipeline", "arm"])
+
+            st.plotly_chart(
+                build_ablation_bars(summary_df, metric),
+                use_container_width=True,
+                key="ablation_bars_chart",
+            )
+            st.plotly_chart(
+                build_ablation_heatmap(summary_df, metric),
+                use_container_width=True,
+                key="ablation_heatmap_chart",
+            )
+
+            st.subheader("Delta vs. 'original' arm (same pipeline)")
+            delta_df = build_ablation_delta_table(summary_df, metric)
+
+            def _color_ablation_delta(val, metric_name):
+                direction = ABLATION_METRIC_DIRECTIONS.get(metric_name, "higher")
+                if direction == "higher":
+                    return "color: green" if val > 0 else "color: red" if val < 0 else ""
+                if direction == "lower":
+                    return "color: green" if val < 0 else "color: red" if val > 0 else ""
+                return "color: red" if abs(val) > 1e-9 else ""
+
+            delta_col = f"Δ{metric}"
+            styled = delta_df.style
+            if delta_col in delta_df.columns:
+                styled = styled.map(
+                    lambda v: _color_ablation_delta(v, metric), subset=[delta_col]
+                )
+            st.dataframe(
+                styled, use_container_width=True, hide_index=True,
+                key="ablation_delta_table",
+            )
+
+        with sub_drill:
+            combo_labels = {f"{c['pipeline']}/{c['arm']}": c for c in ablation_combos}
+            combo_key = st.selectbox(
+                "Combination",
+                list(combo_labels.keys()),
+                format_func=lambda k: (
+                    f"{PIPELINE_LABELS.get(combo_labels[k]['pipeline'], combo_labels[k]['pipeline'])}"
+                    f" — {combo_labels[k]['arm']}"
+                ),
+                key="ablation_combo_sel",
+            )
+            combo = combo_labels[combo_key]
+            results_df_ablation = load_ablation_results(combo["dir"])
+            preds_df_ablation = load_ablation_predictions(combo["dir"])
+
+            drill_seasons = [
+                s for s in ABLATION_SEASONS_ORDER
+                if s in results_df_ablation["season"].unique()
+            ] if not results_df_ablation.empty else []
+            drill_season = st.selectbox(
+                "Climate quarter (season)",
+                ["(all)"] + drill_seasons,
+                key="ablation_drill_season",
+            )
+
+            table_df = results_df_ablation
+            scatter_preds = preds_df_ablation
+            if drill_season != "(all)":
+                table_df = table_df[table_df["season"] == drill_season]
+                if not scatter_preds.empty and "season" in scatter_preds.columns:
+                    scatter_preds = scatter_preds[scatter_preds["season"] == drill_season]
+
+            st.dataframe(
+                table_df.sort_values(["cluster_id", "season", "split"]),
+                use_container_width=True, hide_index=True,
+                key="ablation_drilldown_table",
+            )
+            st.plotly_chart(
+                build_ablation_scatter(
+                    scatter_preds, combo["pipeline"], combo["arm"]
+                ),
+                use_container_width=True,
+                key="ablation_scatter_chart",
+            )

@@ -1,0 +1,191 @@
+{
+  "experiment": "ablation_all",
+  "timestamp": "2026-07-13T13:11:41.860284+00:00",
+  "cluster_merge": null,
+  "merge_groups": [],
+  "synthetic_csv": "/artifacts/_augment_input/synthetic_augment.csv",
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_min",
+    "wind_mag_std",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "lag2_wind_mag_max",
+    "lag3_wind_mag_max",
+    "lag7_wind_mag_max",
+    "rolling7d_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "era5_clim_wind",
+    "latitude",
+    "longitude",
+    "lag1_gust_obs",
+    "lag2_gust_obs",
+    "lag3_gust_obs",
+    "rolling7d_gust_obs",
+    "wind_mag_max_anom",
+    "rolling3d_wind_mag_max",
+    "lag1_pressure_tendency",
+    "cape_18z",
+    "msl_18z",
+    "wind10m_mag_18z",
+    "wind100m_mag_18z",
+    "wind_shear_sfc_18z",
+    "wind_shear_850_300_18z",
+    "wind_shear_850_500_18z",
+    "thickness_1000_500_18z",
+    "lapse_rate_850_500_18z",
+    "q850_18z",
+    "mslp_tendency_18z",
+    "bt55_flag",
+    "bt55_rolling3d",
+    "bt55_rolling7d",
+    "bt55_frac_month"
+  ],
+  "feature_groups": "original,era5_18z,bt55",
+  "active_features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_min",
+    "wind_mag_std",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "lag2_wind_mag_max",
+    "lag3_wind_mag_max",
+    "lag7_wind_mag_max",
+    "rolling7d_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "era5_clim_wind",
+    "latitude",
+    "longitude",
+    "lag1_gust_obs",
+    "lag2_gust_obs",
+    "lag3_gust_obs",
+    "rolling7d_gust_obs",
+    "wind_mag_max_anom",
+    "rolling3d_wind_mag_max",
+    "lag1_pressure_tendency",
+    "cape_18z",
+    "msl_18z",
+    "wind10m_mag_18z",
+    "wind100m_mag_18z",
+    "wind_shear_sfc_18z",
+    "wind_shear_850_300_18z",
+    "wind_shear_850_500_18z",
+    "thickness_1000_500_18z",
+    "lapse_rate_850_500_18z",
+    "q850_18z",
+    "mslp_tendency_18z",
+    "bt55_flag",
+    "bt55_rolling3d",
+    "bt55_rolling7d",
+    "bt55_frac_month"
+  ],
+  "ablation_group": "all",
+  "train_slice": [
+    "2000-01-01",
+    "2022-12-31"
+  ],
+  "val_slice": [
+    "2023-01-01",
+    "2023-12-31"
+  ],
+  "clusters": {
+    "1": {
+      "n_stations": 5,
+      "n_samples": 8360
+    },
+    "2": {
+      "n_stations": 8,
+      "n_samples": 12508
+    },
+    "3": {
+      "n_stations": 3,
+      "n_samples": 4132
+    },
+    "4": {
+      "n_stations": 10,
+      "n_samples": 16979
+    },
+    "5": {
+      "n_stations": 3,
+      "n_samples": 4742
+    },
+    "6": {
+      "n_stations": 1,
+      "n_samples": 1799
+    }
+  },
+  "best_per_cluster": [
+    {
+      "cluster_id": 1,
+      "n_stations": 5,
+      "Model": "HuberRegressor",
+      "R-Squared": 0.7742256352536134,
+      "RMSE": 1.982612798561869
+    },
+    {
+      "cluster_id": 2,
+      "n_stations": 8,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6256172702110816,
+      "RMSE": 1.8774780286505712
+    },
+    {
+      "cluster_id": 3,
+      "n_stations": 3,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.7353177766192348,
+      "RMSE": 2.126782453590605
+    },
+    {
+      "cluster_id": 4,
+      "n_stations": 10,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6482510975618214,
+      "RMSE": 2.081048028852526
+    },
+    {
+      "cluster_id": 5,
+      "n_stations": 3,
+      "Model": "PoissonRegressor",
+      "R-Squared": 0.4885658758557017,
+      "RMSE": 2.4721139692001994
+    },
+    {
+      "cluster_id": 6,
+      "n_stations": 1,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.7252068062920896,
+      "RMSE": 1.5738081274048077
+    }
+  ]
+}
