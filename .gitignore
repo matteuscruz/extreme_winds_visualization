@@ -5,11 +5,17 @@ __pycache__/
 .DS_Store
 artifacts/lazy_clusters/
 
-# Dados pesados (não usados pelo dashboard)
-dataset/raw/
+# Dados pesados (a maioria não usada pelo dashboard — exceção abaixo)
+dataset/raw/*
 dataset/*.joblib
 dataset/*.csv
 *.nc
+
+# INMET_Stratified.nc (11MB) É usado direto por load_inmet_observed() em
+# app.py, pro painel "Observed (INMET)" — precisa estar versionado pro app
+# na nuvem ter acesso (só tem o que está no repo Git). ERA5_Stratified.nc
+# (371MB) continua ignorado — não é lido em lugar nenhum de app.py hoje.
+!dataset/raw/INMET_Stratified.nc
 
 # Gráficos e relatórios (o app lê só CSV/JSON)
 artifacts/**/plots/
