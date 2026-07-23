@@ -1209,12 +1209,6 @@ with tab_global:
             icon="ℹ️",
         )
     else:
-        st.caption(
-            f"{len(ablation_combos)}/18 combinations synced "
-            "(3 pipelines × 6 configurations: original / synthetic / newfeatures / "
-            "all / basin / all_basin)."
-        )
-
         all_results = load_all_ablation(ablation_combos)
         panel_seasons = [
             s for s in ABLATION_SEASONS_ORDER
@@ -1296,10 +1290,6 @@ with tab_global:
                     delta=f"{delta_val:+.3f} {delta_label} vs. original" if delta_val == delta_val else None,
                     delta_color=delta_color,
                 )
-            st.caption(
-                f"Best configuration per pipeline for {metric} "
-                f"({panel_season} · {panel_cluster_choice}), vs. 'original'."
-            )
 
         st.plotly_chart(
             build_ablation_bars(summary_df, metric),
@@ -1310,7 +1300,6 @@ with tab_global:
             use_container_width=True, key="ablation_heatmap_chart",
         )
 
-        st.subheader("Delta vs. 'original' configuration (same pipeline)")
         # delta_df já calculado acima pros cards de métrica — reaproveitado
         # aqui, não recomputado.
 
