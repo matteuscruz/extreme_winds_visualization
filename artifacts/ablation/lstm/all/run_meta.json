@@ -1,6 +1,6 @@
 {
-  "experiment": "ablation_all",
-  "timestamp": "2026-07-13T13:41:17.886943+00:00",
+  "experiment": "all",
+  "timestamp": "2026-07-14T16:29:09.518869+00:00",
   "model_name": "cluster_dual_head_lstm",
   "model_params": {
     "units": 64,
@@ -116,5 +116,20 @@
     "cluster_6"
   ],
   "ablation_group": "all",
-  "best_per_cluster": []
+  "best_per_cluster": [
+    {
+      "cluster_id": "4",
+      "season": "MAM",
+      "n_samples": 91,
+      "R2": -0.2297,
+      "RMSE": 3.858,
+      "Bias": 0.17,
+      "Bias_P90": -6.509,
+      "RMSE_P90": 7.31,
+      "Corr": 0.121,
+      "pipeline": "lstm",
+      "experiment": "all",
+      "split": "test"
+    }
+  ]
 }
