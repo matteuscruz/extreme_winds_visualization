@@ -66,6 +66,14 @@ ABLATION_METRIC_DIRECTIONS = {
     "R2": "higher", "RMSE": "lower", "Bias": "zero",
     "Bias_P90": "zero", "RMSE_P90": "lower",
 }
+# Hemisfério sul: DJF=Verão, MAM=Outono, JJA=Inverno, SON=Primavera — mesmo
+# mapeamento de src/pipelines/common.py (SEASONS) no repo de pesquisa.
+_MONTH_TO_SEASON = {
+    12: "DJF", 1: "DJF", 2: "DJF",
+    3: "MAM", 4: "MAM", 5: "MAM",
+    6: "JJA", 7: "JJA", 8: "JJA",
+    9: "SON", 10: "SON", 11: "SON",
+}
 # Mesma paleta de scripts/_ablation_common.py no repo de pesquisa.
 ARM_COLORS = {
     "original": "#2a78d6", "synthetic": "#1baf7a",
@@ -86,7 +94,6 @@ PALETTE = [
     "#d62728", "#9467bd", "#8c564b",
 ]
 YAXIS_WIND = "Maximum Gust (m/s)"
-R2_COLORSCALE = "RdBu"
 
 # Bounding boxes dos dois domínios ERA5 usados pelo projeto (coordenadas fixas,
 # lidas direto dos .nc de origem no repo de pesquisa — não copiamos o netCDF
@@ -95,14 +102,6 @@ R2_COLORSCALE = "RdBu"
 ERA5_BASIN_EXTENT = {"lat": (-35.0, -13.75), "lon": (-58.0, -39.0)}
 ERA5_18UTC_EXTENT = {"lat": (-27.0, -22.0), "lon": (-55.0, -48.0)}
 
-
-def _extent_ring(extent: dict) -> tuple[list[float], list[float]]:
-    """4 cantos de um bounding box + fecha o laço, pra desenhar como linha."""
-    lat_lo, lat_hi = extent["lat"]
-    lon_lo, lon_hi = extent["lon"]
-    lats = [lat_lo, lat_lo, lat_hi, lat_hi, lat_lo]
-    lons = [lon_lo, lon_hi, lon_hi, lon_lo, lon_lo]
-    return lats, lons
 
 _MLP_PREDS_COLS = [
     "estacao", "time", "latitude", "longitude", "cluster_id",
@@ -334,74 +333,251 @@ def load_all_ablation(combos: list[dict]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def _group_metrics(y_true: np.ndarray, y_pred: np.ndarray, p: int = 90) -> dict:
+    """Réplica de compute_metrics() em src/pipelines/common.py (repo de
+    pesquisa) — mesma fórmula (R2/RMSE via numpy puro, Bias_P90/RMSE_P90
+    restritos à cauda >= percentil p de y_true), pra derivar métricas por
+    trimestre localmente aqui no dashboard sem depender de sklearn."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    ss_res = float(np.sum((y_true - y_pred) ** 2))
+    ss_tot = float(np.sum((y_true - y_true.mean()) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+    bias = float((y_pred - y_true).mean())
+    mask = y_true >= np.percentile(y_true, p)
+    bias_p = float((y_pred[mask] - y_true[mask]).mean()) if mask.sum() > 0 else float("nan")
+    rmse_p = (
+        float(np.sqrt(np.mean((y_true[mask] - y_pred[mask]) ** 2)))
+        if mask.sum() > 0 else float("nan")
+    )
+    return {
+        "R2": r2, "RMSE": rmse, "Bias": bias,
+        "Bias_P90": bias_p, "RMSE_P90": rmse_p,
+    }
+
+
+def derive_quarterly_results(combos: list[dict], all_results: pd.DataFrame) -> pd.DataFrame:
+    """Pra combos cujo results.csv só reporta season='ALL' (hoje: MLP, que
+    avalia o teste inteiro de uma vez, sem quebrar por trimestre), deriva
+    linhas DJF/MAM/JJA/SON localmente a partir de predictions_by_station.csv
+    (tem 'time' por observação) — mesma metodologia de compute_metrics()
+    (ver _group_metrics), agrupando por (cluster_id, season, split), igual
+    ao que lazy/lstm já fazem nativamente. Sem isso, essas pipelines somem
+    do 'Per-quarter snapshot' mesmo tendo dado bruto suficiente pra calcular."""
+    rows = []
+    for c in combos:
+        if not all_results.empty:
+            seasons_here = all_results[
+                (all_results["pipeline"] == c["pipeline"]) & (all_results["arm"] == c["arm"])
+            ]["season"].unique()
+            if any(s != "ALL" for s in seasons_here):
+                continue  # já tem granularidade nativa — não duplica.
+        preds = load_mlp_predictions_by_station(c["dir"])
+        if preds.empty or "time" not in preds.columns:
+            continue
+        preds = preds.copy()
+        preds["season"] = preds["time"].dt.month.map(_MONTH_TO_SEASON)
+        for (cid, season, split), g in preds.groupby(["cluster_id", "season", "split"]):
+            if len(g) < 2:
+                continue
+            metrics = _group_metrics(g["y_true"].to_numpy(), g["y_pred"].to_numpy())
+            rows.append({
+                "pipeline": c["pipeline"], "arm": c["arm"], "experiment": c["arm"],
+                "cluster_id": cid, "season": season, "split": split,
+                "n_samples": len(g), **metrics,
+            })
+    return pd.DataFrame(rows)
+
+
 # ── Seção 1 — Global Comparison Panel ─────────────────────────────────────────
 
-def build_ablation_bars(summary_df: pd.DataFrame, metric: str) -> go.Figure:
-    """Barras agrupadas: metric por pipeline, cor = configuração."""
+def build_ablation_bars_by_quarter(all_results: pd.DataFrame, metric: str) -> go.Figure:
+    """Mesma leitura do gráfico 'metric by pipeline × configuration' acima,
+    mas quebrando cada pipeline nos 4 trimestres (eixo X vira pipeline >
+    trimestre) — cor continua sendo a configuração. Complementa a visão
+    agregada 'ALL' com o detalhe sazonal, sem precisar ir até o 'Per-quarter
+    snapshot' (que já mostra isso, mas 1 subplot por pipeline separado)."""
     fig = go.Figure()
-    if summary_df.empty:
+    quarters = [s for s in ("DJF", "MAM", "JJA", "SON") if s in all_results["season"].unique()]
+    if all_results.empty or not quarters:
         return fig
-    pipelines = [p for p in ABLATION_PIPELINES if p in summary_df["pipeline"].unique()]
-    arms = [a for a in ABLATION_ARMS if a in summary_df["arm"].unique()]
+    rows = all_results[all_results["season"].isin(quarters)]
+    summary = _ablation_aggregate(_ablation_select_split(rows), ["pipeline", "arm", "season"])
+    if summary.empty:
+        return fig
+    pipelines = [p for p in ABLATION_PIPELINES if p in summary["pipeline"].unique()]
+    arms = [a for a in ABLATION_ARMS if a in summary["arm"].unique()]
+    if not pipelines:
+        return fig
+
+    x_pipeline = [PIPELINE_LABELS.get(p, p) for p in pipelines for _ in quarters]
+    x_quarter = [q for _ in pipelines for q in quarters]
+
     for arm in arms:
-        sub = summary_df[summary_df["arm"] == arm].set_index("pipeline")
-        y = [sub[metric].get(p, float("nan")) for p in pipelines]
-        models = [sub["Model"].get(p, "—") if "Model" in sub.columns else "—" for p in pipelines]
+        sub = summary[summary["arm"] == arm].set_index(["pipeline", "season"])
+        y = [sub[metric].get((p, q), float("nan")) for p in pipelines for q in quarters]
         fig.add_trace(go.Bar(
             name=arm,
-            x=[PIPELINE_LABELS.get(p, p) for p in pipelines],
+            x=[x_pipeline, x_quarter],
             y=y,
             marker_color=ARM_COLORS.get(arm, "#898781"),
-            text=[f"{v:.3f}" if v == v else "" for v in y],
-            textposition="outside",
-            customdata=models,
             hovertemplate=(
-                f"<b>{arm}</b><br>%{{x}}<br>{metric}: %{{y:.4f}}"
-                "<br>Model(s): %{customdata}<extra></extra>"
+                f"<b>{arm}</b><br>%{{x}}<br>{metric}: " + "%{y:.4f}<extra></extra>"
             ),
         ))
-    direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
-    hint = {
-        "higher": "higher is better", "lower": "lower is better",
-        "zero": "closer to 0 is better",
-    }[direction]
     fig.update_layout(
         barmode="group",
-        title=f"{metric} by pipeline × configuration ({hint})",
+        title=f"{metric} by pipeline × quarter × configuration",
         yaxis_title=metric,
-        template="plotly_white", height=440,
-        legend={"orientation": "h", "y": -0.22},
-        margin={"t": 55, "b": 80},
+        template="plotly_white", height=460,
+        legend={"orientation": "h", "y": -0.25},
+        margin={"t": 55, "b": 90},
     )
     return fig
 
 
-def build_ablation_heatmap(summary_df: pd.DataFrame, metric: str) -> go.Figure:
-    if summary_df.empty:
-        return go.Figure()
-    df = summary_df.copy()
-    df["combo"] = df["pipeline"].map(lambda p: PIPELINE_LABELS.get(p, p)) + " / " + df["arm"]
-    df = df.sort_values(["pipeline", "arm"])
+def _best_combo_per_cluster(
+    all_results: pd.DataFrame, metric: str, season: str | None = None
+) -> dict[int, tuple[str, str]]:
+    """Pra cada cluster, a combinação (pipeline, arm) vencedora pela métrica
+    dada. season=None usa a visão agregada 'ALL' (ano inteiro); senão usa
+    só as linhas (nativas ou derivadas) daquele trimestre específico."""
+    if all_results.empty:
+        return {}
+    if season is None:
+        selected = _ablation_select_split(_resolve_all_season(all_results))
+    else:
+        selected = _ablation_select_split(all_results[all_results["season"] == season])
+    if selected.empty:
+        return {}
     direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
-    z = (
-        df[metric] if direction == "higher"
-        else (-df[metric] if direction == "lower" else -df[metric].abs())
-    )
-    fig = go.Figure(go.Heatmap(
-        z=[z.tolist()],
-        x=df["combo"].tolist(),
-        y=[metric],
-        colorscale=R2_COLORSCALE,
-        text=[df[metric].round(3).tolist()],
-        texttemplate="%{text}",
-        showscale=False,
+    winners: dict[int, tuple[str, str]] = {}
+    for cid, g in selected.groupby("cluster_id"):
+        g = g.dropna(subset=[metric])
+        if g.empty:
+            continue
+        if direction == "higher":
+            row = g.loc[g[metric].idxmax()]
+        elif direction == "lower":
+            row = g.loc[g[metric].idxmin()]
+        else:
+            row = g.loc[g[metric].abs().idxmin()]
+        winners[int(cid)] = (row["pipeline"], row["arm"])
+    return winners
+
+
+def _sdf_from_cluster_winners(
+    ablation_combos: list[dict],
+    winners: dict[int, tuple[str, str]],
+    value_label: str,
+    metric_label: str,
+    season: str | None = None,
+) -> pd.DataFrame:
+    """Monta um DataFrame estacao/lat/lon/cluster_id/value 'costurado': o
+    valor de cada estação vem do combo (pipeline, arm) que venceu o CLUSTER
+    daquela estação (winners) — permite visualizar espacialmente 'o melhor
+    resultado disponível, sempre', em vez de fixar 1 único pipeline/arm pro
+    mapa inteiro. season=None agrega o ano inteiro; senão restringe àquele
+    trimestre (mesmo recorte usado pra escolher o vencedor)."""
+    cols = ["estacao", "latitude", "longitude", "cluster_id", "value"]
+    frames = []
+    for cid, (pipeline, arm) in winners.items():
+        combo = next(
+            (c for c in ablation_combos if c["pipeline"] == pipeline and c["arm"] == arm),
+            None,
+        )
+        if combo is None:
+            continue
+        sdf = (
+            aggregate_station_values(combo["dir"], value_label, metric_label)
+            if season is None
+            else aggregate_station_values_by_season(combo["dir"], value_label, metric_label, season)
+        )
+        if sdf.empty:
+            continue
+        sdf = sdf[sdf["cluster_id"].astype(str) == str(cid)]
+        if not sdf.empty:
+            frames.append(sdf)
+    return pd.concat(frames, ignore_index=True)[cols] if frames else pd.DataFrame(columns=cols)
+
+
+def build_best_per_cluster_bars(all_results: pd.DataFrame, metric: str) -> go.Figure:
+    """4 barras por cluster (DJF/MAM/JJA/SON) = a MELHOR combinação
+    (pipeline × configuração) daquele trimestre especificamente, entre
+    TODAS as testadas (LazyPredict/MLP/LSTM × original/synthetic/
+    newfeatures/all/basin/all_basin). Cor = pipeline vencedor. Eixo X é
+    multi-categoria (cluster agrupando os 4 trimestres) — mais denso que a
+    versão anterior (1 barra 'ALL' por cluster), mas mostra se o mesmo
+    cluster tem um vencedor consistente ao longo do ano ou se a melhor
+    escolha muda por trimestre."""
+    fig = go.Figure()
+    if all_results.empty:
+        return fig
+    quarters = [s for s in ("DJF", "MAM", "JJA", "SON") if s in all_results["season"].unique()]
+    if not quarters:
+        return fig
+    selected = _ablation_select_split(all_results[all_results["season"].isin(quarters)])
+    if selected.empty:
+        return fig
+    direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
+    winners = []
+    for (cid, season), g in selected.groupby(["cluster_id", "season"]):
+        g = g.dropna(subset=[metric])
+        if g.empty:
+            continue
+        if direction == "higher":
+            row = g.loc[g[metric].idxmax()]
+        elif direction == "lower":
+            row = g.loc[g[metric].idxmin()]
+        else:
+            row = g.loc[g[metric].abs().idxmin()]
+        winners.append(row)
+    if not winners:
+        return fig
+    winners_df = pd.DataFrame(winners)
+    winners_df["cluster_id"] = winners_df["cluster_id"].astype(int)
+    winners_df["season"] = pd.Categorical(winners_df["season"], categories=quarters, ordered=True)
+    winners_df = winners_df.sort_values(["cluster_id", "season"])
+
+    cluster_labels = [f"Cluster {c}" for c in winners_df["cluster_id"]]
+    season_labels = winners_df["season"].astype(str).tolist()
+
+    # Trace real PRIMEIRO — traces "fantasma" (só pra legenda de cor) antes
+    # dela confundem a inferência de tipo do eixo X do Plotly e as barras
+    # somem (mesmo bug já visto na versão anterior deste gráfico).
+    fig.add_trace(go.Bar(
+        x=[cluster_labels, season_labels],
+        y=winners_df[metric],
+        marker_color=[PIPELINE_COLORS.get(p, "#898781") for p in winners_df["pipeline"]],
+        showlegend=False,
+        customdata=np.column_stack([
+            [PIPELINE_LABELS.get(p, p) for p in winners_df["pipeline"]],
+            winners_df["arm"].to_numpy(),
+        ]),
+        hovertemplate=(
+            "<b>%{x}</b><br>%{customdata[0]} · %{customdata[1]}<br>"
+            f"{metric}: " + "%{y:.4f}<extra></extra>"
+        ),
     ))
+    # Sempre mostra as 3 pipelines na legenda, mesmo as que não venceram
+    # nenhum par cluster×trimestre — omitir deixaria parecer que a pipeline
+    # nem foi considerada na comparação, quando na verdade só perdeu sempre.
+    for pipeline in ABLATION_PIPELINES:
+        fig.add_trace(go.Bar(
+            x=[[cluster_labels[0]], [season_labels[0]]], y=[0],
+            marker_color=PIPELINE_COLORS.get(pipeline),
+            name=PIPELINE_LABELS.get(pipeline, pipeline), showlegend=True,
+            hoverinfo="skip",
+        ))
     fig.update_layout(
-        title=f"{metric} — all combinations",
-        template="plotly_white", height=220,
-        margin={"t": 45, "b": 90, "l": 60},
+        title=f"Best {metric} per cluster × quarter, any pipeline × configuration",
+        yaxis_title=metric,
+        barmode="overlay",
+        template="plotly_white", height=480,
+        legend={"orientation": "h", "y": -0.22},
+        margin={"t": 55, "b": 80},
     )
-    fig.update_xaxes(tickangle=45)
     return fig
 
 
@@ -519,7 +695,9 @@ def build_inspector_map(
     halo colorido por valor (Turbo, `cmin`/`cmax` compartilhados), não mais
     cor categórica por cluster nem `symbol: "star"` (símbolo depende de
     sprite carregado de forma assíncrona pelo maplibre — mesmo bug de
-    confiabilidade já corrigido em `build_interp_map`)."""
+    confiabilidade já corrigido em `build_interp_map`). Tema (basemap/halo/
+    legenda) segue `_map_theme_colors()`, a mesma paleta adaptativa."""
+    _theme = _map_theme_colors()
     fig = go.Figure()
 
     locations: list[str] = []
@@ -539,7 +717,7 @@ def build_inspector_map(
             colorscale="Viridis",
             marker_opacity=0.25,
             marker_line_width=1.2,
-            marker_line_color="white",
+            marker_line_color=_theme["cluster_line_color"],
             text=texts,
             hovertemplate="%{text}<extra></extra>",
             showscale=False,
@@ -552,9 +730,16 @@ def build_inspector_map(
             stations_df["estacao"].map(value_by_estacao).to_numpy(float)
             if has_values else None
         )
-        sizes = [20 if sel_station == r.estacao else 15 for r in stations_df.itertuples()]
-        halo_sizes = [24 if sel_station == r.estacao else 18 for r in stations_df.itertuples()]
-        halo_colors = ["#c0392b" if sel_station == r.estacao else "black" for r in stations_df.itertuples()]
+        # Mesmo tamanho de marcador/halo dos demais mapas (build_interp_map):
+        # estação normal = 7/9, só a selecionada fica um pouco maior pra
+        # continuar destacável.
+        sizes = [10 if sel_station == r.estacao else 7 for r in stations_df.itertuples()]
+        halo_sizes = [13 if sel_station == r.estacao else 9 for r in stations_df.itertuples()]
+        sel_color = "#ff6b5b" if _theme["is_dark"] else "#c0392b"
+        halo_colors = [
+            sel_color if sel_station == r.estacao else _theme["halo_color"]
+            for r in stations_df.itertuples()
+        ]
 
         fig.add_trace(go.Scattermap(
             lat=stations_df["latitude"], lon=stations_df["longitude"],
@@ -579,31 +764,50 @@ def build_inspector_map(
             name="Stations",
         ))
 
-    # Cobertura ERA5 — retângulos dos dois domínios (novo Basin × antigo
-    # 18UTC/Paraná-only), pra deixar visível o quanto a cobertura cresceu.
-    old_lats, old_lons = _extent_ring(ERA5_18UTC_EXTENT)
-    fig.add_trace(go.Scattermap(
-        lat=old_lats, lon=old_lons, mode="lines",
-        line={"color": "#b23a3a", "width": 2},
-        hoverinfo="skip", name="ERA5 18UTC coverage (old, Paraná only)",
+    # Cobertura ERA5 — máscara real de cada domínio (novo Basin × antigo
+    # 18UTC/Paraná-only), não mais o retângulo bruto do bounding-box: a
+    # interseção com a geometria real da bacia (mesma usada pros clusters em
+    # build_interp_map) recorta a parte do retângulo que cai fora da área de
+    # estudo, deixando só a região que de fato importa preenchida. Vermelho/
+    # verde mais claros no tema escuro (os tons originais escurecem demais e
+    # quase somem no basemap carto-darkmatter).
+    old_color = "#ff6f6f" if _theme["is_dark"] else "#b23a3a"
+    new_color = "#3fcf7f" if _theme["is_dark"] else "#1f8a4c"
+    _, basin_union = load_basin_geometries()
+
+    def _era5_mask_trace(extent: dict, color: str, label: str) -> go.Scattermap:
+        box = shapely.box(
+            extent["lon"][0], extent["lat"][0], extent["lon"][1], extent["lat"][1],
+        )
+        mask = shapely.intersection(box, basin_union)
+        m_lons, m_lats = _polygon_boundary_lonlat(mask)
+        r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
+        return go.Scattermap(
+            lat=m_lats, lon=m_lons, mode="lines", fill="toself",
+            fillcolor=f"rgba({r},{g},{b},0.12)",
+            line={"color": color, "width": 2},
+            hoverinfo="skip", name=label,
+        )
+
+    fig.add_trace(_era5_mask_trace(
+        ERA5_18UTC_EXTENT, old_color, "ERA5 18UTC coverage (old, Paraná only)",
     ))
-    basin_lats, basin_lons = _extent_ring(ERA5_BASIN_EXTENT)
-    fig.add_trace(go.Scattermap(
-        lat=basin_lats, lon=basin_lons, mode="lines",
-        line={"color": "#1f8a4c", "width": 2},
-        hoverinfo="skip", name="ERA5-Basin coverage (new)",
+    fig.add_trace(_era5_mask_trace(
+        ERA5_BASIN_EXTENT, new_color, "ERA5-Basin coverage (new)",
     ))
 
     fig.update_layout(
         # Centro/zoom ajustados pra caber as 243 estações do INMET expandido
         # (lat -33.7..-14.4, lon -57.1..-39.9 — vai de RS até Minas Gerais),
         # não só o antigo recorte Sul (RS/SC/PR, zoom 5 cortava a metade norte).
-        map={"style": "carto-positron", "center": {"lat": -24.0, "lon": -48.5}, "zoom": 4},
+        map={"style": _theme["map_style"], "center": {"lat": -24.0, "lon": -48.5}, "zoom": 4},
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         height=420,
+        paper_bgcolor="rgba(0,0,0,0)",
+        font={"color": _theme["font_color"]},
         uirevision="map",
         showlegend=True,
-        legend={"orientation": "h", "y": 0, "bgcolor": "rgba(255,255,255,0.7)"},
+        legend={"orientation": "h", "y": 0, "bgcolor": _theme["legend_bgcolor"]},
     )
     return fig
 
@@ -732,6 +936,7 @@ INTERP_VALUES = {
     "Observed (INMET)": "y_true",
     "ERA5 raw": "era5_wind_mag_max",
     "Correction (Pred − ERA5)": "_correction",
+    "Error (|Pred − Obs|)": "_abs_error",
 }
 INTERP_METHODS = {
     "IDW (original)": "original",
@@ -754,6 +959,40 @@ def aggregate_station_values(
     df = df.copy()
     if col == "_correction":
         df["_correction"] = df["y_pred"] - df["era5_wind_mag_max"]
+    elif col == "_abs_error":
+        df["_abs_error"] = (df["y_pred"] - df["y_true"]).abs()
+    agg, q = INTERP_METRICS[metric_label]
+    grp = df.groupby(["estacao", "latitude", "longitude", "cluster_id"])[col]
+    if agg == "max":
+        s = grp.max()
+    elif agg == "mean":
+        s = grp.mean()
+    else:
+        s = grp.quantile(q)
+    return s.reset_index().rename(columns={col: "value"})
+
+
+@st.cache_data
+def aggregate_station_values_by_season(
+    combo_dir: str, value_label: str, metric_label: str, season: str
+) -> pd.DataFrame:
+    """Igual a aggregate_station_values(), mas restrito a um trimestre
+    climático (DJF/MAM/JJA/SON) — usado pelos mapas espaciais 'melhor
+    modelo por cluster × trimestre'."""
+    df = load_mlp_predictions_by_station(combo_dir)
+    cols = ["estacao", "latitude", "longitude", "cluster_id", "value"]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    df = df.copy()
+    df["season"] = df["time"].dt.month.map(_MONTH_TO_SEASON)
+    df = df[df["season"] == season]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    col = INTERP_VALUES[value_label]
+    if col == "_correction":
+        df["_correction"] = df["y_pred"] - df["era5_wind_mag_max"]
+    elif col == "_abs_error":
+        df["_abs_error"] = (df["y_pred"] - df["y_true"]).abs()
     agg, q = INTERP_METRICS[metric_label]
     grp = df.groupby(["estacao", "latitude", "longitude", "cluster_id"])[col]
     if agg == "max":
@@ -853,11 +1092,49 @@ def _idw_grid(st_lon, st_lat, st_val, method, n=70, margin=0.6,
     return LON.ravel(), LAT.ravel(), z.ravel()
 
 
+def _map_theme_colors() -> dict:
+    """Paleta de mapa adaptada ao tema ativo do Streamlit (claro/escuro) —
+    usada por build_interp_map() e build_inspector_map(), pra manter os dois
+    mapas da dashboard consistentes entre si e com o resto da UI."""
+    try:
+        is_dark = st.context.theme.type == "dark"
+    except Exception:
+        is_dark = False
+    return {
+        "is_dark": is_dark,
+        "map_style": "carto-darkmatter" if is_dark else "carto-positron",
+        "halo_color": "#f2f2f2" if is_dark else "black",
+        "boundary_color": "rgba(230,230,230,0.85)" if is_dark else "rgba(60,60,60,0.75)",
+        "font_color": "#e6e6e6" if is_dark else "#2b2b2b",
+        "legend_bgcolor": "rgba(30,30,30,0.7)" if is_dark else "rgba(255,255,255,0.7)",
+        "cluster_line_color": "rgba(230,230,230,0.85)" if is_dark else "white",
+    }
+
+
+def _polygon_boundary_lonlat(geom) -> tuple[list, list]:
+    """Extrai lon/lat do contorno (exterior + buracos) de um Polygon ou
+    MultiPolygon shapely, com None separando cada anel — formato que
+    go.Scattermap(mode='lines') precisa pra desenhar contornos desconexos
+    numa única trace."""
+    lons: list = []
+    lats: list = []
+    parts = geom.geoms if hasattr(geom, "geoms") else [geom]
+    for poly in parts:
+        for ring in (poly.exterior, *poly.interiors):
+            xs, ys = ring.xy
+            lons.extend(xs)
+            lats.extend(ys)
+            lons.append(None)
+            lats.append(None)
+    return lons, lats
+
+
 def build_interp_map(
     sdf: pd.DataFrame, method_label: str, is_diff: bool,
     cmin_override: float | None = None, cmax_override: float | None = None,
     height: int = 520, show_colorbar: bool = True,
     mask_geom=None, bounds_override: dict | None = None,
+    hover_extra_by_station: dict[str, str] | None = None,
 ) -> go.Figure:
     """Mapa Plotly: campo interpolado (grade, pontos minúsculos e esmaecidos —
     é estimativa) + estações (círculos grandes com halo — é dado real). Mesma
@@ -871,12 +1148,22 @@ def build_interp_map(
     bounding-box que `_idw_grid` usa internamente pra gerar a grade.
     `bounds_override` (dict west/east/south/north, opcional): força a MESMA
     janela de mapa em vários painéis lado a lado — sem isso cada painel
-    calcularia seu próprio enquadramento a partir das suas próprias estações."""
+    calcularia seu próprio enquadramento a partir das suas próprias estações.
+    `hover_extra_by_station` (dict estacao -> texto multi-linha, opcional):
+    quando informado, o hover de CADA estação mostra o valor dela em TODOS
+    os painéis (Observado/ERA5/LazyPredict/MLP/LSTM), não só o deste painel
+    — permite comparar os 5 valores sem trocar de mapa."""
+    _theme = _map_theme_colors()
+    map_style, halo_color = _theme["map_style"], _theme["halo_color"]
+    boundary_color, font_color = _theme["boundary_color"], _theme["font_color"]
+
     fig = go.Figure()
     base_layout = {
-        "map": {"style": "carto-positron",
+        "map": {"style": map_style,
                 "center": {"lat": -28.5, "lon": -52.5}, "zoom": 5},
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0}, "height": height,
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "font": {"color": font_color},
     }
     if sdf.empty or len(sdf) < 2:
         fig.update_layout(**base_layout)
@@ -886,9 +1173,23 @@ def build_interp_map(
     val = sdf["value"].to_numpy(float)
     flon, flat, fz = _idw_grid(lon, lat, val, INTERP_METHODS[method_label])
 
+    # Recorte + contorno da área com dado: usa mask_geom se foi passado
+    # (Seção 2 — cluster/bacia focada, compartilhado entre painéis); senão
+    # deriva automaticamente a união dos clusters presentes no próprio sdf
+    # (Seção 1 — mapas "melhor por cluster", que antes ficavam sem recorte
+    # nenhum e o campo IDW se espalhava pelo retângulo bounding-box inteiro,
+    # inclusive fora de qualquer cluster com dado).
     if mask_geom is not None:
-        inside = shapely.contains(mask_geom, shapely.points(flon, flat))
-        flon, flat, fz = flon[inside], flat[inside], fz[inside]
+        boundary_geom = mask_geom
+    else:
+        per_polygon, basin_union = load_basin_geometries()
+        cluster_ids = sdf["cluster_id"].unique() if "cluster_id" in sdf.columns else []
+        present = {f"{int(float(c)):02d}" for c in cluster_ids}
+        geoms = [per_polygon[c] for c in present if c in per_polygon]
+        boundary_geom = shapely.union_all(geoms) if geoms else basin_union
+    shapely.prepare(boundary_geom)
+    inside = shapely.contains(boundary_geom, shapely.points(flon, flat))
+    flon, flat, fz = flon[inside], flat[inside], fz[inside]
 
     allv = np.concatenate([fz[np.isfinite(fz)], val])
     if is_diff:
@@ -902,19 +1203,21 @@ def build_interp_map(
         )
 
     # A grade IDW entre estações não é dado observado — é uma estimativa que
-    # pode estar bem errada longe de qualquer estação. O estilo abaixo
-    # comunica isso visualmente: campo bem esmaecido (baixa opacidade, sem
-    # borda) por baixo, estações grandes e com contorno sólido por cima —
-    # só o marcador de estação é "dado real"; o resto é chute plausível.
+    # pode estar bem errada longe de qualquer estação. Mesmo assim precisa
+    # ser bem visível (tamanho/opacidade próximos do marcador de estação);
+    # o contorno da área com dado (abaixo) já comunica "isso é estimativa
+    # dentro da região coberta", sem precisar esmaecer o campo a ponto de
+    # ficar invisível.
     field_marker = {
-        "size": 2, "color": fz, "colorscale": cscale, "cmin": cmin,
-        "cmax": cmax, "opacity": 0.22, "showscale": show_colorbar,
+        "size": 7, "color": fz, "colorscale": cscale, "cmin": cmin,
+        "cmax": cmax, "opacity": 0.65, "showscale": show_colorbar,
     }
     if show_colorbar:
         field_marker["colorbar"] = {"title": "m/s"}
     # go.Scattermap não aceita marker.line (sem borda nativa, ao contrário de
-    # go.Scatter) — o "contorno" é simulado com um halo: círculo preto um
-    # pouco maior desenhado ANTES do círculo colorido, no mesmo ponto.
+    # go.Scatter) — o "contorno" é simulado com um halo: círculo um pouco
+    # maior (cor adaptada ao tema, pra não sumir no basemap escuro) desenhado
+    # ANTES do círculo colorido, no mesmo ponto, sem transparência.
     # Círculo (não "star"): símbolos não-circulares em go.Scattermap dependem
     # de um sprite de ícone carregado de forma assíncrona pelo maplibre — numa
     # atualização rápida de bounds (troca de cluster focus) essa corrida pode
@@ -922,15 +1225,21 @@ def build_interp_map(
     # ao vivo: estações sumiram do mapa depois de trocar o cluster focus,
     # mesmo a legenda continuando a mostrar "Stations"). Círculo é o marcador
     # nativo do Scattermap, sem essa dependência — sempre aparece.
-    station_halo_marker = {"size": 20, "color": "black"}
+    station_halo_marker = {"size": 9, "color": halo_color}
     station_marker = {
-        "size": 15, "color": val, "colorscale": cscale, "cmin": cmin,
+        "size": 7, "color": val, "colorscale": cscale, "cmin": cmin,
         "cmax": cmax, "showscale": False,
     }
     if cmid is not None:
         field_marker["cmid"] = cmid
         station_marker["cmid"] = cmid
 
+    b_lons, b_lats = _polygon_boundary_lonlat(boundary_geom)
+    fig.add_trace(go.Scattermap(
+        lat=b_lats, lon=b_lons, mode="lines",
+        line={"width": 1.5, "color": boundary_color},
+        hoverinfo="skip", showlegend=False, name="Data coverage",
+    ))
     fig.add_trace(go.Scattermap(
         lat=flat, lon=flon, mode="markers", marker=field_marker,
         hovertemplate="%{lat:.2f}, %{lon:.2f}<br>~%{marker.color:.2f} m/s (estimated)<extra></extra>",
@@ -940,13 +1249,25 @@ def build_interp_map(
         lat=lat, lon=lon, mode="markers", marker=station_halo_marker,
         hoverinfo="skip", showlegend=False,
     ))
-    fig.add_trace(go.Scattermap(
-        lat=lat, lon=lon, mode="markers", marker=station_marker,
-        customdata=sdf[["estacao", "cluster_id", "value"]].values,
-        hovertemplate=(
+    if hover_extra_by_station:
+        extra = sdf["estacao"].map(hover_extra_by_station).fillna("").to_numpy()
+        station_customdata = np.column_stack([
+            sdf["estacao"].to_numpy(), sdf["cluster_id"].to_numpy(), extra,
+        ])
+        station_hovertemplate = (
+            "<b>%{customdata[0]}</b> (actual data)<br>Cluster %{customdata[1]}<br>"
+            "%{customdata[2]}<extra></extra>"
+        )
+    else:
+        station_customdata = sdf[["estacao", "cluster_id", "value"]].values
+        station_hovertemplate = (
             "<b>%{customdata[0]}</b> (actual data)<br>Cluster %{customdata[1]}<br>"
             "%{customdata[2]:.2f} m/s<extra></extra>"
-        ),
+        )
+    fig.add_trace(go.Scattermap(
+        lat=lat, lon=lon, mode="markers", marker=station_marker,
+        customdata=station_customdata,
+        hovertemplate=station_hovertemplate,
         name="Stations",
     ))
     # bounds > center/zoom: ajusta a janela do mapa pra caber exatamente a
@@ -1210,22 +1531,17 @@ with tab_global:
         )
     else:
         all_results = load_all_ablation(ablation_combos)
-        panel_seasons = [
-            s for s in ABLATION_SEASONS_ORDER
-            if s in all_results["season"].unique()
-        ] if not all_results.empty else []
+        derived_quarterly = derive_quarterly_results(ablation_combos, all_results)
+        if not derived_quarterly.empty:
+            all_results = pd.concat([all_results, derived_quarterly], ignore_index=True)
         panel_clusters = (
             sorted(all_results["cluster_id"].unique(), key=str)
             if not all_results.empty else []
         )
 
-        col_metric, col_season, col_cluster = st.columns([1, 1, 1])
+        col_metric, col_cluster = st.columns([1, 1])
         with col_metric:
             metric = st.selectbox("Metric", ABLATION_METRICS, key="ablation_metric")
-        with col_season:
-            panel_season = st.selectbox(
-                "Climate quarter (season)", panel_seasons or ["ALL"], key="ablation_season",
-            )
         with col_cluster:
             panel_cluster_choice = st.selectbox(
                 "Cluster",
@@ -1238,15 +1554,16 @@ with tab_global:
                 ),
             )
 
-        by_season = (
-            _resolve_all_season(all_results) if panel_season == "ALL"
-            else all_results[all_results["season"] == panel_season]
-        )
+        # Cards/barras/heatmap/tabela abaixo usam a visão agregada 'ALL'
+        # (todos os trimestres combinados) — o detalhamento por trimestre
+        # isolado fica no bloco "Per-quarter snapshot" logo abaixo, sem
+        # precisar de um seletor pra trocar de trimestre.
+        panel_season = "ALL"
+        by_season = _resolve_all_season(all_results)
         if by_season.empty:
             st.info(
-                f"No combination has data for season '{panel_season}' yet — "
-                "pipelines currently differ in season coverage "
-                "(e.g. MLP only reports 'ALL' today).",
+                "No combination has data yet — pipelines currently differ "
+                "in season coverage (e.g. MLP only reports 'ALL' today).",
                 icon="ℹ️",
             )
 
@@ -1257,6 +1574,89 @@ with tab_global:
 
         selected_rows = _ablation_select_split(by_cluster)
         summary_df = _ablation_aggregate(selected_rows, ["pipeline", "arm"])
+
+        # ── Best per cluster (barras + mapa espacial) — lado a lado pra
+        # economizar espaço vertical. O 1º mostra, por cluster, a MELHOR
+        # combinação pipeline×configuração entre TODAS as testadas — não é
+        # filtrado por "Cluster" acima (esse seletor foca 1 cluster; este
+        # gráfico já compara todos). O 2º é a versão espacial do 1º: em vez
+        # de barra, mostra o campo interpolado do erro do modelo (|Predito −
+        # INMET observado|, só onde há observação real), "costurando" o
+        # resultado de cada cluster com o combo que venceu ali.
+        col_best_cluster, col_best_map = st.columns(2)
+        with col_best_cluster:
+            st.markdown("**Best per cluster**")
+            _best_cluster_fig = build_best_per_cluster_bars(all_results, metric)
+            if not _best_cluster_fig.data:
+                st.caption("No data yet.")
+            else:
+                st.plotly_chart(
+                    _best_cluster_fig, use_container_width=True, key="best_per_cluster_chart",
+                )
+        with col_best_map:
+            st.markdown("**Best per cluster — spatial error**")
+            _all_winners = _best_combo_per_cluster(all_results, metric)
+            _best_map_sdf = _sdf_from_cluster_winners(
+                ablation_combos, _all_winners, "Error (|Pred − Obs|)", "Mean",
+            )
+            if _best_map_sdf.empty or len(_best_map_sdf) < 2:
+                st.caption("No data yet.")
+            else:
+                st.plotly_chart(
+                    build_interp_map(_best_map_sdf, "IDW (original)", False, height=380),
+                    use_container_width=True, key="best_per_cluster_map",
+                )
+        st.divider()
+
+        # ── Best per cluster × trimestre — mapa espacial ─────────────────
+        # Mesma ideia do mapa acima, mas 1 mapa por trimestre (DJF/MAM/JJA/
+        # SON), cada um "costurado" com o vencedor daquele cluster NAQUELE
+        # trimestre especificamente (não o vencedor do ano inteiro).
+        st.markdown("**Best per cluster × quarter — spatial error**")
+        _quarters_for_maps = [
+            s for s in ("DJF", "MAM", "JJA", "SON") if s in all_results["season"].unique()
+        ]
+        if not _quarters_for_maps:
+            st.caption("No per-quarter rows synced yet (only 'ALL' available).")
+        else:
+            # Calcula os 4 sdf's ANTES de desenhar, pra poder compartilhar a
+            # mesma escala de cor (cmin/cmax) e mostrar só 1 colorbar — mesmo
+            # padrão já usado no comparativo de 5 painéis da Seção 2.
+            _quarter_sdfs = []
+            for quarter in _quarters_for_maps:
+                q_winners = _best_combo_per_cluster(all_results, metric, season=quarter)
+                q_sdf = _sdf_from_cluster_winners(
+                    ablation_combos, q_winners, "Error (|Pred − Obs|)", "Mean", season=quarter,
+                )
+                _quarter_sdfs.append((quarter, q_sdf))
+
+            _quarter_vals = pd.concat(
+                [s["value"] for _, s in _quarter_sdfs if s is not None and not s.empty],
+                ignore_index=True,
+            )
+            _q_cmin = float(_quarter_vals.min()) if not _quarter_vals.empty else None
+            _q_cmax = float(_quarter_vals.max()) if not _quarter_vals.empty else None
+            _q_last_valid = max(
+                (i for i, (_, s) in enumerate(_quarter_sdfs) if s is not None and len(s) >= 2),
+                default=-1,
+            )
+
+            quarter_map_cols = st.columns(len(_quarters_for_maps))
+            for i, (q_col, (quarter, q_sdf)) in enumerate(zip(quarter_map_cols, _quarter_sdfs)):
+                with q_col:
+                    st.caption(quarter)
+                    if q_sdf.empty or len(q_sdf) < 2:
+                        st.caption("No data.")
+                    else:
+                        st.plotly_chart(
+                            build_interp_map(
+                                q_sdf, "IDW (original)", False, height=340,
+                                cmin_override=_q_cmin, cmax_override=_q_cmax,
+                                show_colorbar=(i == _q_last_valid),
+                            ),
+                            use_container_width=True, key=f"best_per_cluster_map_{quarter}",
+                        )
+        st.divider()
 
         # ── Cards de métrica — melhor configuração por pipeline vs. "original" ──
         direction = ABLATION_METRIC_DIRECTIONS.get(metric, "higher")
@@ -1291,15 +1691,12 @@ with tab_global:
                     delta_color=delta_color,
                 )
 
-        st.plotly_chart(
-            build_ablation_bars(summary_df, metric),
-            use_container_width=True, key="ablation_bars_chart",
-        )
-        st.plotly_chart(
-            build_ablation_heatmap(summary_df, metric),
-            use_container_width=True, key="ablation_heatmap_chart",
-        )
-
+        _quarter_pipeline_fig = build_ablation_bars_by_quarter(all_results, metric)
+        if _quarter_pipeline_fig.data:
+            st.plotly_chart(
+                _quarter_pipeline_fig, use_container_width=True,
+                key="ablation_bars_by_quarter_chart",
+            )
         # delta_df já calculado acima pros cards de métrica — reaproveitado
         # aqui, não recomputado.
 
@@ -1429,6 +1826,24 @@ with tab_inspector:
         _shared_cmin = float(_all_vals.min()) if not _all_vals.empty else None
         _shared_cmax = float(_all_vals.max()) if not _all_vals.empty else None
 
+        # Junta o valor de cada estação em TODOS os painéis num único texto
+        # de hover, pra comparar Observado/ERA5/LazyPredict/MLP/LSTM sem
+        # precisar passar o mouse painel por painel.
+        _values_by_station: dict[str, dict[str, float]] = {}
+        for label, sdf in multi_panels:
+            if sdf is None or sdf.empty:
+                continue
+            for est, v in zip(sdf["estacao"], sdf["value"]):
+                _values_by_station.setdefault(est, {})[label] = v
+        _hover_extra_by_station = {
+            est: "<br>".join(
+                f"{label}: {values[label]:.2f} m/s"
+                for label, _ in multi_panels
+                if label in values and np.isfinite(values[label])
+            )
+            for est, values in _values_by_station.items()
+        }
+
         # Recorta o campo interpolado na forma real da bacia/cluster (em vez
         # de um retângulo) e enquadra o mapa exatamente nessa região — os 4
         # painéis compartilham a MESMA geometria/janela, senão cada um
@@ -1484,6 +1899,7 @@ with tab_inspector:
                             cmin_override=_shared_cmin, cmax_override=_shared_cmax, height=380,
                             mask_geom=_mask_geom, bounds_override=_shared_bounds,
                             show_colorbar=(i == _last_valid_idx),
+                            hover_extra_by_station=_hover_extra_by_station,
                         ),
                         use_container_width=True, key=f"multi_map_{label}",
                     )

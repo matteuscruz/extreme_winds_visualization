@@ -1,15 +1,14 @@
 {
-  "experiment": "ablation_synthetic",
-  "timestamp": "2026-07-13T10:43:01.777512+00:00",
+  "experiment": "synthetic",
+  "timestamp": "2026-07-24T13:31:58.593651+00:00",
   "cluster_merge": null,
   "merge_groups": [],
-  "synthetic_csv": "/artifacts/_augment_input/synthetic_augment.csv",
+  "synthetic_csv": null,
   "features": [
     "10m_u_component_of_wind",
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -40,6 +39,16 @@
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
     "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
     "cape_18z",
     "msl_18z",
     "wind10m_mag_18z",
@@ -54,7 +63,19 @@
     "bt55_flag",
     "bt55_rolling3d",
     "bt55_rolling7d",
-    "bt55_frac_month"
+    "bt55_frac_month",
+    "ws_mean_basin",
+    "ws_max_basin",
+    "ws_std_basin",
+    "sin_dir_mean_basin",
+    "cos_dir_mean_basin",
+    "msl_mean_basin",
+    "d_msl_basin",
+    "t2m_mean_basin",
+    "t2m_range_basin",
+    "rh_mean_basin",
+    "td_dep_mean_basin",
+    "tp_sum_basin"
   ],
   "feature_groups": "original",
   "active_features": [
@@ -62,7 +83,6 @@
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -92,11 +112,21 @@
     "rolling7d_gust_obs",
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
-    "lag1_pressure_tendency"
+    "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin"
   ],
   "ablation_group": "synthetic",
   "train_slice": [
-    "2000-01-01",
+    "2020-01-01",
     "2022-12-31"
   ],
   "val_slice": [
@@ -104,73 +134,161 @@
     "2023-12-31"
   ],
   "clusters": {
+    "10": {
+      "n_stations": 30,
+      "n_samples": 48918
+    },
+    "11": {
+      "n_stations": 15,
+      "n_samples": 24835
+    },
+    "12": {
+      "n_stations": 19,
+      "n_samples": 31543
+    },
+    "13": {
+      "n_stations": 10,
+      "n_samples": 15647
+    },
+    "14": {
+      "n_stations": 11,
+      "n_samples": 18552
+    },
     "1": {
-      "n_stations": 5,
-      "n_samples": 8360
+      "n_stations": 6,
+      "n_samples": 10171
     },
     "2": {
-      "n_stations": 8,
-      "n_samples": 12508
+      "n_stations": 16,
+      "n_samples": 25111
     },
     "3": {
-      "n_stations": 3,
-      "n_samples": 4132
+      "n_stations": 9,
+      "n_samples": 12908
     },
     "4": {
-      "n_stations": 10,
-      "n_samples": 16979
+      "n_stations": 30,
+      "n_samples": 48040
     },
     "5": {
-      "n_stations": 3,
-      "n_samples": 4742
+      "n_stations": 21,
+      "n_samples": 30417
     },
     "6": {
-      "n_stations": 1,
-      "n_samples": 1799
+      "n_stations": 16,
+      "n_samples": 19536
+    },
+    "7": {
+      "n_stations": 9,
+      "n_samples": 13446
+    },
+    "8": {
+      "n_stations": 15,
+      "n_samples": 21386
+    },
+    "9": {
+      "n_stations": 36,
+      "n_samples": 54005
     }
   },
   "best_per_cluster": [
     {
       "cluster_id": 1,
-      "n_stations": 5,
-      "Model": "HuberRegressor",
-      "R-Squared": 0.7742256352536134,
-      "RMSE": 1.982612798561869
+      "n_stations": 6,
+      "Model": "LinearSVR",
+      "R-Squared": 0.5534583882539896,
+      "RMSE": 2.7220622199865647
     },
     {
       "cluster_id": 2,
-      "n_stations": 8,
-      "Model": "CatBoostRegressor",
-      "R-Squared": 0.6256172702110816,
-      "RMSE": 1.8774780286505712
+      "n_stations": 16,
+      "Model": "LinearSVR",
+      "R-Squared": 0.6361741238594816,
+      "RMSE": 1.9615401545364155
     },
     {
       "cluster_id": 3,
-      "n_stations": 3,
-      "Model": "ExtraTreesRegressor",
-      "R-Squared": 0.7385694752374079,
-      "RMSE": 2.113678008622755
+      "n_stations": 9,
+      "Model": "KNeighborsRegressor",
+      "R-Squared": 0.632659553563105,
+      "RMSE": 2.2672768624190844
     },
     {
       "cluster_id": 4,
-      "n_stations": 10,
-      "Model": "CatBoostRegressor",
-      "R-Squared": 0.6456655690385447,
-      "RMSE": 2.088682391942031
+      "n_stations": 30,
+      "Model": "LinearSVR",
+      "R-Squared": 0.6550407306082646,
+      "RMSE": 2.566244284991942
     },
     {
       "cluster_id": 5,
-      "n_stations": 3,
-      "Model": "PoissonRegressor",
-      "R-Squared": 0.5212641274498027,
-      "RMSE": 2.3917821662448717
+      "n_stations": 21,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.441751136067933,
+      "RMSE": 2.487547752975583
     },
     {
       "cluster_id": 6,
-      "n_stations": 1,
-      "Model": "ExtraTreesRegressor",
-      "R-Squared": 0.7319968394089961,
-      "RMSE": 1.5542424122287937
+      "n_stations": 16,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.3949428816430508,
+      "RMSE": 2.5179103879792795
+    },
+    {
+      "cluster_id": 7,
+      "n_stations": 9,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.4249773784186553,
+      "RMSE": 2.03542464909259
+    },
+    {
+      "cluster_id": 8,
+      "n_stations": 15,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.4391464930707134,
+      "RMSE": 1.9528537269731856
+    },
+    {
+      "cluster_id": 9,
+      "n_stations": 36,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.531420942437673,
+      "RMSE": 2.078111825442609
+    },
+    {
+      "cluster_id": 10,
+      "n_stations": 30,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.4579811216205288,
+      "RMSE": 1.8533159929019427
+    },
+    {
+      "cluster_id": 11,
+      "n_stations": 15,
+      "Model": "KNeighborsRegressor",
+      "R-Squared": 0.5602242374253956,
+      "RMSE": 1.897238952273368
+    },
+    {
+      "cluster_id": 12,
+      "n_stations": 19,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.5332538517215737,
+      "RMSE": 1.8655828155786225
+    },
+    {
+      "cluster_id": 13,
+      "n_stations": 10,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.434958616836496,
+      "RMSE": 1.6564190772466847
+    },
+    {
+      "cluster_id": 14,
+      "n_stations": 11,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.3462738702201796,
+      "RMSE": 1.7560245221106676
     }
   ]
 }

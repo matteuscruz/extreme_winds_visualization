@@ -1,6 +1,6 @@
 {
-  "experiment": "ablation_newfeatures",
-  "timestamp": "2026-07-12T21:42:06.567549+00:00",
+  "experiment": "newfeatures",
+  "timestamp": "2026-07-24T13:54:04.779852+00:00",
   "cluster_merge": null,
   "merge_groups": [],
   "hidden_layers": [
@@ -16,7 +16,6 @@
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -47,6 +46,16 @@
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
     "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
     "cape_18z",
     "msl_18z",
     "wind10m_mag_18z",
@@ -61,7 +70,19 @@
     "bt55_flag",
     "bt55_rolling3d",
     "bt55_rolling7d",
-    "bt55_frac_month"
+    "bt55_frac_month",
+    "ws_mean_basin",
+    "ws_max_basin",
+    "ws_std_basin",
+    "sin_dir_mean_basin",
+    "cos_dir_mean_basin",
+    "msl_mean_basin",
+    "d_msl_basin",
+    "t2m_mean_basin",
+    "t2m_range_basin",
+    "rh_mean_basin",
+    "td_dep_mean_basin",
+    "tp_sum_basin"
   ],
   "feature_groups": "original,era5_18z,bt55",
   "active_features": [
@@ -69,7 +90,6 @@
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -100,6 +120,16 @@
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
     "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
     "cape_18z",
     "msl_18z",
     "wind10m_mag_18z",
@@ -118,65 +148,57 @@
   ],
   "ablation_group": "newfeatures",
   "train_slice": [
-    "2000-01-01",
-    "2020-12-31"
-  ],
-  "val_slice": [
-    "2021-01-01",
+    "2020-01-01",
     "2022-12-31"
   ],
-  "test_slice": [
+  "val_slice": [
     "2023-01-01",
     "2023-12-31"
   ],
+  "test_slice": [
+    "2024-01-01",
+    "2024-12-31"
+  ],
   "per_cluster": [
     {
-      "cluster_id": 1,
-      "n_stations": 5,
-      "MLP_R2": 0.37198448500007764,
-      "MLP_RMSE": 2.985906406504847,
-      "MLP_Bias_P90": -0.6587528184464659,
-      "ERA5_Bias_P90": -9.163278435830634
-    },
-    {
-      "cluster_id": 2,
-      "n_stations": 8,
-      "MLP_R2": 0.2774720426560382,
-      "MLP_RMSE": 2.6089660060401045,
-      "MLP_Bias_P90": -1.9481967954741612,
-      "ERA5_Bias_P90": -8.88830050692556
-    },
-    {
-      "cluster_id": 3,
-      "n_stations": 3,
-      "MLP_R2": 0.4802909064843117,
-      "MLP_RMSE": 2.6887824658697443,
-      "MLP_Bias_P90": -1.1228002324471111,
-      "ERA5_Bias_P90": -7.77161038778329
-    },
-    {
       "cluster_id": 4,
-      "n_stations": 10,
-      "MLP_R2": -0.04753309138844086,
-      "MLP_RMSE": 3.1794530204799774,
-      "MLP_Bias_P90": -0.946067110143587,
-      "ERA5_Bias_P90": -8.805794768354053
+      "n_stations": 6,
+      "MLP_R2": 0.17609390622323762,
+      "MLP_RMSE": 3.118356635006458,
+      "MLP_Bias_P90": -0.8583403296295299,
+      "ERA5_Bias_P90": -10.734354130215115
     },
     {
       "cluster_id": 5,
-      "n_stations": 3,
-      "MLP_R2": -0.07836155782841714,
-      "MLP_RMSE": 3.4485568274374283,
-      "MLP_Bias_P90": -3.545118385954588,
-      "ERA5_Bias_P90": -8.91051579518837
+      "n_stations": 15,
+      "MLP_R2": 0.17113315464104784,
+      "MLP_RMSE": 2.784003533238813,
+      "MLP_Bias_P90": -3.1990520960483884,
+      "ERA5_Bias_P90": -9.51156066222847
     },
     {
       "cluster_id": 6,
-      "n_stations": 1,
-      "MLP_R2": -0.16682243942436048,
-      "MLP_RMSE": 3.7137698747367405,
-      "MLP_Bias_P90": -0.7019581776247382,
-      "ERA5_Bias_P90": -10.221029137242194
+      "n_stations": 15,
+      "MLP_R2": 0.18169929612470492,
+      "MLP_RMSE": 3.1624805302873162,
+      "MLP_Bias_P90": -4.320033968693246,
+      "ERA5_Bias_P90": -12.59245978069766
+    },
+    {
+      "cluster_id": 7,
+      "n_stations": 2,
+      "MLP_R2": 0.003614817755389299,
+      "MLP_RMSE": 2.931386199619413,
+      "MLP_Bias_P90": -2.6538999316261718,
+      "ERA5_Bias_P90": -10.04636253984007
+    },
+    {
+      "cluster_id": 8,
+      "n_stations": 7,
+      "MLP_R2": 0.037475923897945074,
+      "MLP_RMSE": 3.1123223143576597,
+      "MLP_Bias_P90": -3.943681413983699,
+      "ERA5_Bias_P90": -10.88501244630569
     }
   ]
 }

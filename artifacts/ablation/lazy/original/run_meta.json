@@ -1,6 +1,6 @@
 {
   "experiment": "original",
-  "timestamp": "2026-07-23T15:24:24.956679+00:00",
+  "timestamp": "2026-07-24T13:29:41.353853+00:00",
   "cluster_merge": null,
   "merge_groups": [],
   "synthetic_csv": null,
@@ -259,8 +259,8 @@
       "cluster_id": 10,
       "n_stations": 30,
       "Model": "TweedieRegressor",
-      "R-Squared": 0.4579811216205288,
-      "RMSE": 1.8533159929019427
+      "R-Squared": 0.4579811216205287,
+      "RMSE": 1.853315992901943
     },
     {
       "cluster_id": 11,

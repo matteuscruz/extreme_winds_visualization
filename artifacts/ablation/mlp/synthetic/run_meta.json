@@ -1,6 +1,6 @@
 {
-  "experiment": "ablation_synthetic",
-  "timestamp": "2026-07-12T21:32:07.539100+00:00",
+  "experiment": "synthetic",
+  "timestamp": "2026-07-24T14:01:58.113605+00:00",
   "cluster_merge": null,
   "merge_groups": [],
   "hidden_layers": [
@@ -10,13 +10,12 @@
   "alpha": 0.001,
   "extreme_power": 2.0,
   "max_iter": 500,
-  "synthetic_csv": "/artifacts/_augment_input/synthetic_augment.csv",
+  "synthetic_csv": null,
   "features": [
     "10m_u_component_of_wind",
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -47,6 +46,16 @@
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
     "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
     "cape_18z",
     "msl_18z",
     "wind10m_mag_18z",
@@ -61,7 +70,19 @@
     "bt55_flag",
     "bt55_rolling3d",
     "bt55_rolling7d",
-    "bt55_frac_month"
+    "bt55_frac_month",
+    "ws_mean_basin",
+    "ws_max_basin",
+    "ws_std_basin",
+    "sin_dir_mean_basin",
+    "cos_dir_mean_basin",
+    "msl_mean_basin",
+    "d_msl_basin",
+    "t2m_mean_basin",
+    "t2m_range_basin",
+    "rh_mean_basin",
+    "td_dep_mean_basin",
+    "tp_sum_basin"
   ],
   "feature_groups": "original",
   "active_features": [
@@ -69,7 +90,6 @@
     "10m_v_component_of_wind",
     "wind_mag",
     "wind_mag_max",
-    "wind_mag_min",
     "wind_mag_std",
     "wind_dir_sin",
     "wind_dir_cos",
@@ -99,69 +119,143 @@
     "rolling7d_gust_obs",
     "wind_mag_max_anom",
     "rolling3d_wind_mag_max",
-    "lag1_pressure_tendency"
+    "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin"
   ],
   "ablation_group": "synthetic",
   "train_slice": [
-    "2000-01-01",
-    "2020-12-31"
-  ],
-  "val_slice": [
-    "2021-01-01",
+    "2020-01-01",
     "2022-12-31"
   ],
-  "test_slice": [
+  "val_slice": [
     "2023-01-01",
     "2023-12-31"
+  ],
+  "test_slice": [
+    "2024-01-01",
+    "2024-12-31"
   ],
   "per_cluster": [
     {
       "cluster_id": 1,
-      "n_stations": 5,
-      "MLP_R2": 0.4368839685652026,
-      "MLP_RMSE": 2.82741755309159,
-      "MLP_Bias_P90": -0.9922124836709596,
-      "ERA5_Bias_P90": -9.163278435830634
+      "n_stations": 4,
+      "MLP_R2": 0.3329766478645866,
+      "MLP_RMSE": 2.6371913334314407,
+      "MLP_Bias_P90": -2.044855646949795,
+      "ERA5_Bias_P90": -9.913602986529066
     },
     {
       "cluster_id": 2,
-      "n_stations": 8,
-      "MLP_R2": 0.3589983011649037,
-      "MLP_RMSE": 2.457370738589423,
-      "MLP_Bias_P90": -2.3489447158047674,
-      "ERA5_Bias_P90": -8.88830050692556
+      "n_stations": 16,
+      "MLP_R2": 0.2209235309303279,
+      "MLP_RMSE": 3.0480527207702006,
+      "MLP_Bias_P90": -3.6456911266550756,
+      "ERA5_Bias_P90": -10.297968428181667
     },
     {
       "cluster_id": 3,
-      "n_stations": 3,
-      "MLP_R2": 0.44802847981962934,
-      "MLP_RMSE": 2.7709828923016695,
-      "MLP_Bias_P90": -1.0532474452597154,
-      "ERA5_Bias_P90": -7.77161038778329
+      "n_stations": 9,
+      "MLP_R2": 0.22045267762819099,
+      "MLP_RMSE": 3.139106506655996,
+      "MLP_Bias_P90": -2.715716297431269,
+      "ERA5_Bias_P90": -9.71768406482592
     },
     {
       "cluster_id": 4,
-      "n_stations": 10,
-      "MLP_R2": 0.2764557506184724,
-      "MLP_RMSE": 2.6424153573784563,
-      "MLP_Bias_P90": -1.0890732891784927,
-      "ERA5_Bias_P90": -8.805794768354053
+      "n_stations": 30,
+      "MLP_R2": 0.3872348058215934,
+      "MLP_RMSE": 3.2070376663807694,
+      "MLP_Bias_P90": -2.9423942065096447,
+      "ERA5_Bias_P90": -12.849031856327546
     },
     {
       "cluster_id": 5,
-      "n_stations": 3,
-      "MLP_R2": -0.4212085770473728,
-      "MLP_RMSE": 3.958987204779681,
-      "MLP_Bias_P90": -3.257411857793033,
-      "ERA5_Bias_P90": -8.91051579518837
+      "n_stations": 20,
+      "MLP_R2": 0.19947494184252412,
+      "MLP_RMSE": 2.8573727651597034,
+      "MLP_Bias_P90": -3.5466394555005274,
+      "ERA5_Bias_P90": -9.717287302743166
     },
     {
       "cluster_id": 6,
-      "n_stations": 1,
-      "MLP_R2": -0.445816393616731,
-      "MLP_RMSE": 4.133987652280188,
-      "MLP_Bias_P90": -0.7384048386994937,
-      "ERA5_Bias_P90": -10.221029137242194
+      "n_stations": 15,
+      "MLP_R2": -0.0032928338951929703,
+      "MLP_RMSE": 3.5017509346249556,
+      "MLP_Bias_P90": -4.382590490713837,
+      "ERA5_Bias_P90": -12.59245978069766
+    },
+    {
+      "cluster_id": 7,
+      "n_stations": 9,
+      "MLP_R2": -0.1018039593580835,
+      "MLP_RMSE": 3.4083489621444993,
+      "MLP_Bias_P90": -4.728496172313763,
+      "ERA5_Bias_P90": -11.562413451435802
+    },
+    {
+      "cluster_id": 8,
+      "n_stations": 15,
+      "MLP_R2": -0.027634053339731013,
+      "MLP_RMSE": 3.1269438003872203,
+      "MLP_Bias_P90": -4.072973939456805,
+      "ERA5_Bias_P90": -10.869094182146862
+    },
+    {
+      "cluster_id": 9,
+      "n_stations": 34,
+      "MLP_R2": 0.1945373985733857,
+      "MLP_RMSE": 2.913081656000531,
+      "MLP_Bias_P90": -3.369887779293901,
+      "ERA5_Bias_P90": -11.406257870462206
+    },
+    {
+      "cluster_id": 10,
+      "n_stations": 30,
+      "MLP_R2": -0.0903881808067597,
+      "MLP_RMSE": 3.14334918271591,
+      "MLP_Bias_P90": -3.3688057335122794,
+      "ERA5_Bias_P90": -11.663422259062378
+    },
+    {
+      "cluster_id": 11,
+      "n_stations": 15,
+      "MLP_R2": 0.36495798401809065,
+      "MLP_RMSE": 2.305291298710669,
+      "MLP_Bias_P90": -2.018551560771684,
+      "ERA5_Bias_P90": -8.639885279824657
+    },
+    {
+      "cluster_id": 12,
+      "n_stations": 18,
+      "MLP_R2": 0.3273686083042794,
+      "MLP_RMSE": 2.407867119494693,
+      "MLP_Bias_P90": -2.6586647437206974,
+      "ERA5_Bias_P90": -8.75236890020937
+    },
+    {
+      "cluster_id": 13,
+      "n_stations": 10,
+      "MLP_R2": -0.036188104587619785,
+      "MLP_RMSE": 2.31892154601219,
+      "MLP_Bias_P90": -2.5827565105803223,
+      "ERA5_Bias_P90": -8.884121819752366
+    },
+    {
+      "cluster_id": 14,
+      "n_stations": 11,
+      "MLP_R2": -0.10816216561325365,
+      "MLP_RMSE": 2.6600260423597057,
+      "MLP_Bias_P90": -3.561897880589199,
+      "ERA5_Bias_P90": -10.487750842508516
     }
   ]
 }
