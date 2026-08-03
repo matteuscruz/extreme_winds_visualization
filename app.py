@@ -37,9 +37,23 @@ from theme import PIPELINE_COLORS
 
 st.set_page_config(
     page_title="IRC Vendaval",
-    page_icon="🌬️",
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+# Esconde o controle de atribuição (texto "© CARTO, © OpenStreetMap
+# contributors" + botão "ⓘ") que a MapLibre/Mapbox GL desenha sobre os
+# mapas — a pedido explícito, ciente de que isso normalmente vai contra os
+# termos de uso desses provedores de tile gratuitos.
+st.markdown(
+    """
+    <style>
+    .maplibregl-ctrl-attrib, .mapboxgl-ctrl-attrib {
+        display: none !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -51,6 +65,12 @@ SHP_PATH = Path("dataset/shp/shp_vento.shp")
 # ser ressincronizado manualmente sempre que o INMET for expandido de novo.
 INMET_RAW_PATH = Path("dataset/raw/INMET_Stratified.nc")
 INMET_TARGET_VAR = "daily_wind_gust_max"
+
+# Grid corrigido (sincronizado via scripts/sync_corrected_grid_to_dashboard.py
+# no repo de pesquisa) — versão "v1" do best-model-per-cluster/trimestre, ver
+# src/dataset/creation/grid_generator.py. Não passa pela matriz de ablation
+# (ARTIFACTS_DIR acima): é um produto espacial único, não um experimento.
+CORRECTED_GRID_DIR = Path("artifacts/corrected_grid/v1")
 
 # Matriz de ablation (sincronizada de scripts/sync_ablation_to_dashboard.py no
 # repo de pesquisa) — ÚNICA fonte de dado deste dashboard. Nenhum pipeline
@@ -80,7 +100,7 @@ ARM_COLORS = {
     "newfeatures": "#c98a1f", "all": "#4a3aa7",
     "basin": "#3d8b3d", "all_basin": "#8a5a2e",
 }
-PIPELINE_LABELS = {"lazy": "LazyPredict", "mlp": "MLP", "lstm": "LSTM (TF dual-head)"}
+PIPELINE_LABELS = {"lazy": "ML Models", "mlp": "MLP", "lstm": "LSTM (TF dual-head)"}
 # LazyPredict é a única pipeline que varia o tipo de modelo por cluster/trimestre
 # (results.csv já traz o vencedor de ~30 candidatos). MLP/LSTM usam sempre o
 # mesmo tipo de modelo — label fixa só pra manter a coluna "Model" consistente.
@@ -571,12 +591,11 @@ def build_best_per_cluster_bars(all_results: pd.DataFrame, metric: str) -> go.Fi
             hoverinfo="skip",
         ))
     fig.update_layout(
-        title=f"Best {metric} per cluster × quarter, any pipeline × configuration",
         yaxis_title=metric,
         barmode="overlay",
         template="plotly_white", height=480,
         legend={"orientation": "h", "y": -0.22},
-        margin={"t": 55, "b": 80},
+        margin={"t": 20, "b": 80},
     )
     return fig
 
@@ -671,7 +690,7 @@ def build_lazy_top5_chart(top5_df: pd.DataFrame) -> go.Figure:
 
     fig.update_layout(
         barmode="group",
-        title="LazyPredict — top 5 models per configuration (by R²)",
+        title="ML Models — top 5 per configuration (by R²)",
         yaxis_title="R2",
         template="plotly_white", height=440,
         legend={"orientation": "h", "y": -0.22},
@@ -927,6 +946,7 @@ def build_residual_boxplot(combos: list[dict], sel_cluster) -> go.Figure:
 
 INTERP_METRICS = {
     "Historical max": ("max", None),
+    "P90": ("quantile", 0.90),
     "P95": ("quantile", 0.95),
     "P99": ("quantile", 0.99),
     "Mean": ("mean", None),
@@ -1072,10 +1092,14 @@ def aggregate_cluster_values(
     return merged[cols]
 
 
+@st.cache_data
 def _idw_grid(st_lon, st_lat, st_val, method, n=70, margin=0.6,
               power=2.0, eps=1e-3, sigma=0.6):
     """Campo IDW numa grade regular. Distâncias em graus — aproximação plana,
-    suficiente pro recorte pequeno do Sul do Brasil."""
+    suficiente pro recorte pequeno do Sul do Brasil. Cacheado: é uma função
+    pura sobre os valores das estações — sem isso, cada rerun de um fragment
+    (troca de metric/smoothing/cluster focus) refaz a interpolação em ~4900
+    pontos do zero, mesmo quando os valores de entrada não mudaram."""
     lon_min, lon_max = st_lon.min() - margin, st_lon.max() + margin
     lat_min, lat_max = st_lat.min() - margin, st_lat.max() + margin
     glon = np.linspace(lon_min, lon_max, n)
@@ -1426,6 +1450,241 @@ def build_importance(importance_df: pd.DataFrame, cluster_id) -> go.Figure:
     return fig
 
 
+# ── Seção 4 — Corrected Grid Explorer ─────────────────────────────────────────
+# Grid corrigido (artifacts/corrected_grid/v1/) é um produto espacial único
+# (best-model-per-cluster/trimestre "costurado", ver grid_generator.py no
+# repo de pesquisa), não uma combinação pipeline×arm — por isso vive fora da
+# matriz de ablation, com seus próprios loaders.
+
+@st.cache_resource
+def load_corrected_grid() -> xr.Dataset:
+    """Concatena os .nc anuais e reconstrói o ERA5 original localmente via
+    `rajada_corrigida - bias` (ver `rajada_corrigida = era5_vals + bias_grid`
+    em grid_generator.py) — evita carregar o ERA5-Basin bruto (~6GB), que
+    não vive neste repo. cache_resource (não cache_data): mantém o mesmo
+    xr.Dataset dask-backed entre reruns, em vez de serializar via pickle."""
+    files = sorted(CORRECTED_GRID_DIR.glob("grid_corrected_*.nc"))
+    if not files:
+        return xr.Dataset()
+    ds = xr.open_mfdataset(files, combine="by_coords").sortby("time")
+    ds["ws_original"] = ds["rajada_max_corrigida"] - ds["bias"]
+    return ds
+
+
+@st.cache_data
+def corrected_grid_date_bounds() -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    ds = load_corrected_grid()
+    if not ds.data_vars:
+        return None
+    times = pd.to_datetime(ds.time.values)
+    return times.min(), times.max()
+
+
+@st.cache_data
+def corrected_grid_snapshot(date_str: str) -> pd.DataFrame:
+    """Achata o grid num dia pra long-form (longitude/latitude/original/
+    corrigido), formato consumido por build_grid_map (mesmo padrão de
+    'pontos minúsculos coloridos por valor' de build_interp_map)."""
+    cols = ["longitude", "latitude", "ws_original", "rajada_max_corrigida"]
+    ds = load_corrected_grid()
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    day = ds.sel(time=date_str, method="nearest")
+    lon2d, lat2d = np.meshgrid(day.longitude.values, day.latitude.values)
+    df = pd.DataFrame({
+        "longitude": lon2d.ravel(),
+        "latitude": lat2d.ravel(),
+        "ws_original": np.asarray(day["ws_original"].values).ravel(),
+        "rajada_max_corrigida": np.asarray(day["rajada_max_corrigida"].values).ravel(),
+    })
+    return df.dropna()
+
+
+@st.cache_data
+def corrected_grid_station_series(lat: float, lon: float) -> pd.DataFrame:
+    """Série temporal (original/corrigido) no PIXEL do grid mais próximo de
+    (lat, lon) — comparação correta ponto-a-ponto com uma estação, em vez de
+    média espacial da bacia inteira (rajada é um fenômeno local; a média da
+    bacia suaviza os picos que uma estação isolada registra)."""
+    cols = ["time", "ws_original", "rajada_max_corrigida"]
+    ds = load_corrected_grid()
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    point = ds.sel(latitude=lat, longitude=lon, method="nearest")
+    return pd.DataFrame({
+        "time": pd.to_datetime(point.time.values),
+        "ws_original": np.asarray(point["ws_original"].values),
+        "rajada_max_corrigida": np.asarray(point["rajada_max_corrigida"].values),
+    })
+
+
+@st.cache_data
+def grid_station_percentile_values(metric_label: str, stations_df: pd.DataFrame) -> pd.DataFrame:
+    """Valor agregado (P90/P95/P99/Mean/Historical max, mesmo INTERP_METRICS
+    do resto do dashboard) do ERA5 original e corrigido no pixel mais
+    próximo de CADA estação, extraído de uma vez com indexação vetorizada do
+    xarray (em vez de 243 chamadas .sel individuais) — insumo do mapa
+    espacial de "captura de extremos" (erro nos percentis altos, onde mora
+    o vendaval, não na média)."""
+    cols = ["estacao", "latitude", "longitude", "cluster_id", "era5_original", "era5_corrected"]
+    ds = load_corrected_grid()
+    if not ds.data_vars or stations_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    agg, q = INTERP_METRICS[metric_label]
+    lat_da = xr.DataArray(stations_df["latitude"].to_numpy(float), dims="estacao")
+    lon_da = xr.DataArray(stations_df["longitude"].to_numpy(float), dims="estacao")
+    # .load(): materializa os ~243 pontos extraídos (pequeno) antes do
+    # quantile — dask recusa quantile com "time" com múltiplos chunks (um
+    # chunk por arquivo/ano do open_mfdataset) como dimensão núcleo.
+    pts = ds[["ws_original", "rajada_max_corrigida"]].sel(
+        latitude=lat_da, longitude=lon_da, method="nearest",
+    ).load()
+    if agg == "max":
+        vals = pts.max(dim="time", skipna=True)
+    elif agg == "mean":
+        vals = pts.mean(dim="time", skipna=True)
+    else:
+        vals = pts.quantile(q, dim="time", skipna=True)
+
+    return pd.DataFrame({
+        "estacao": stations_df["estacao"].to_numpy(),
+        "latitude": stations_df["latitude"].to_numpy(),
+        "longitude": stations_df["longitude"].to_numpy(),
+        "cluster_id": stations_df["cluster_id"].to_numpy(),
+        "era5_original": np.asarray(vals["ws_original"].values, dtype=float),
+        "era5_corrected": np.asarray(vals["rajada_max_corrigida"].values, dtype=float),
+    })
+
+
+@st.cache_data
+def load_inmet_station_series(estacao: str) -> pd.Series:
+    """Rajada máxima diária observada (INMET_Stratified.nc) pra uma única
+    estação — mesma variável física de rajada_max_corrigida."""
+    if not INMET_RAW_PATH.exists():
+        return pd.Series(dtype=float)
+    ds = xr.open_dataset(INMET_RAW_PATH)
+    if estacao not in ds["estacao"].values:
+        ds.close()
+        return pd.Series(dtype=float)
+    da = ds[INMET_TARGET_VAR].sel(estacao=estacao)
+    s = pd.Series(np.asarray(da.values, dtype=float), index=pd.to_datetime(da["time"].values))
+    ds.close()
+    return s
+
+
+GRID_VMIN, GRID_VMAX = 0.0, 20.0  # rajada máxima (m/s) — mesma escala do notebook de referência
+
+
+def build_grid_map(
+    df: pd.DataFrame, value_col: str, stations_df: pd.DataFrame,
+    sel_station: str | None, title: str, height: int = 380,
+    show_colorbar: bool = True,
+) -> go.Figure:
+    """Raster do grid corrigido como pontos pequenos/esmaecidos coloridos por
+    valor (mesma linguagem visual do campo IDW em build_interp_map) +
+    estações INMET sobrepostas (halo + marcador, mesmo padrão de
+    build_inspector_map), com a estação selecionada destacada. cmin/cmax
+    fixos (GRID_VMIN/GRID_VMAX) pros dois painéis (original/corrigido)
+    dividirem a MESMA escala de cor — show_colorbar=False no 1º painel
+    evita duas barras de cor idênticas lado a lado (mesmo padrão de
+    build_interp_map/show_colorbar usado no resto do dashboard)."""
+    _theme = _map_theme_colors()
+    fig = go.Figure()
+
+    if not df.empty:
+        marker = {
+            "size": 6, "color": df[value_col], "colorscale": "Turbo",
+            "cmin": GRID_VMIN, "cmax": GRID_VMAX, "opacity": 0.55,
+            "showscale": show_colorbar,
+        }
+        if show_colorbar:
+            marker["colorbar"] = {"title": "m/s"}
+        fig.add_trace(go.Scattermap(
+            lat=df["latitude"], lon=df["longitude"], mode="markers",
+            marker=marker,
+            hovertemplate="%{lat:.2f}, %{lon:.2f}<br>~%{marker.color:.2f} m/s<extra></extra>",
+            showlegend=False, name="Grid",
+        ))
+
+    if not stations_df.empty:
+        sizes = [10 if sel_station == r.estacao else 6 for r in stations_df.itertuples()]
+        halo_sizes = [13 if sel_station == r.estacao else 9 for r in stations_df.itertuples()]
+        sel_color = "#ff6b5b" if _theme["is_dark"] else "#c0392b"
+        halo_colors = [
+            sel_color if sel_station == r.estacao else _theme["halo_color"]
+            for r in stations_df.itertuples()
+        ]
+        fig.add_trace(go.Scattermap(
+            lat=stations_df["latitude"], lon=stations_df["longitude"],
+            mode="markers", marker={"size": halo_sizes, "color": halo_colors},
+            hoverinfo="skip", showlegend=False,
+        ))
+        fig.add_trace(go.Scattermap(
+            lat=stations_df["latitude"], lon=stations_df["longitude"],
+            mode="markers", marker={"size": sizes, "color": "black"},
+            customdata=stations_df["estacao"].values,
+            hovertemplate="<b>%{customdata}</b><extra></extra>",
+            name="Estações INMET",
+        ))
+
+    fig.update_layout(
+        map={
+            "style": _theme["map_style"],
+            "center": {
+                "lat": sum(ERA5_BASIN_EXTENT["lat"]) / 2,
+                "lon": sum(ERA5_BASIN_EXTENT["lon"]) / 2,
+            },
+            "zoom": 4,
+        },
+        margin={"l": 0, "r": 0, "t": 30, "b": 0}, height=height,
+        paper_bgcolor="rgba(0,0,0,0)", font={"color": _theme["font_color"]},
+        title=title, uirevision="corrected-grid-map",
+    )
+    return fig
+
+
+def build_grid_station_timeseries(
+    estacao: str | None, series_df: pd.DataFrame, inmet_series: pd.Series, year: int,
+) -> go.Figure:
+    """Mesma paleta/estilo de build_residual_timeseries: royalblue = INMET
+    observado, darkorange = ERA5 corrigido, tomato pontilhado = ERA5
+    original — comparação no pixel do grid mais próximo da estação."""
+    fig = go.Figure()
+    if estacao is None or series_df.empty:
+        fig.update_layout(
+            title="Selecione uma estação no mapa",
+            template="plotly_white", height=380,
+        )
+        return fig
+
+    s = series_df[series_df["time"].dt.year == year]
+    obs = inmet_series[inmet_series.index.year == year] if inmet_series is not None else None
+
+    fig.add_trace(go.Scatter(
+        x=s["time"], y=s["ws_original"], name="ERA5 original (pixel)",
+        line={"color": "tomato", "width": 1, "dash": "dot"},
+    ))
+    fig.add_trace(go.Scatter(
+        x=s["time"], y=s["rajada_max_corrigida"], name="ERA5 corrigido (pixel)",
+        line={"color": "darkorange", "width": 1.5},
+    ))
+    if obs is not None and not obs.empty:
+        fig.add_trace(go.Scatter(
+            x=obs.index, y=obs.values, name=f"INMET — {estacao}",
+            line={"color": "royalblue", "width": 1.5},
+        ))
+
+    fig.update_layout(
+        title=f"Rajada máxima diária — {estacao} ({year})",
+        xaxis_title="Data", yaxis_title="Rajada máxima (m/s)",
+        template="plotly_white", height=380,
+        legend={"orientation": "h", "y": -0.2},
+        margin={"t": 50, "b": 60},
+    )
+    return fig
+
+
 # ── Layout principal ──────────────────────────────────────────────────────────
 
 geojson_clusters = load_geojson()
@@ -1439,7 +1698,7 @@ CLUSTER_MEMBERS = {cid: _cluster_members(cid) for cid in CLUSTER_IDS_ALL}
 
 ablation_combos = discover_ablation_combos()
 
-st.title("🌬️ Extreme Wind Gust Bias Correction")
+st.title("Extreme Wind Gust Bias Correction")
 
 if "global_pipelines" not in st.session_state:
     st.session_state["global_pipelines"] = ["mlp"]
@@ -1457,7 +1716,7 @@ if "_pending_station" in st.session_state:
     st.session_state["global_station"] = st.session_state.pop("_pending_station")
 
 with st.sidebar:
-    st.title("🌬️ IRC Vendaval")
+    st.title("IRC Vendaval")
     st.caption("Extreme wind gust bias correction")
     st.divider()
 
@@ -1513,15 +1772,21 @@ with st.sidebar:
     st.caption(f"Train: `{TRAIN_PERIOD[0]}` → `{TRAIN_PERIOD[1]}`")
     st.caption(f"Validation: `{VAL_PERIOD[0]}` → `{VAL_PERIOD[1]}`")
 
-tab_global, tab_inspector, tab_diag = st.tabs([
-    "📊 Global Comparison Panel",
-    "🗺️ Spatial & Temporal Error Inspector",
-    "🔬 Model Diagnostics & Explainability",
+tab_global, tab_inspector, tab_diag, tab_grid = st.tabs([
+    "Global Comparison Panel",
+    "Spatial & Temporal Error Inspector",
+    "Model Diagnostics & Explainability",
+    "AI database",
 ])
 
 # ── Seção 1: Global Comparison Panel ──────────────────────────────────────────
+# Cada aba roda como um st.fragment: um widget mexido DENTRO da aba só
+# reprocessa aquela aba (não as outras 3), evitando recomputar IDW/OLS de
+# todas as seções a cada interação — só um rerun completo (troca de algo na
+# barra lateral, fora de qualquer fragment) ainda reprocessa tudo.
 
-with tab_global:
+@st.fragment
+def _render_tab_global():
     if not ablation_combos:
         st.info(
             "No results synced yet. Run "
@@ -1585,7 +1850,6 @@ with tab_global:
         # resultado de cada cluster com o combo que venceu ali.
         col_best_cluster, col_best_map = st.columns(2)
         with col_best_cluster:
-            st.markdown("**Best per cluster**")
             _best_cluster_fig = build_best_per_cluster_bars(all_results, metric)
             if not _best_cluster_fig.data:
                 st.caption("No data yet.")
@@ -1594,7 +1858,6 @@ with tab_global:
                     _best_cluster_fig, use_container_width=True, key="best_per_cluster_chart",
                 )
         with col_best_map:
-            st.markdown("**Best per cluster — spatial error**")
             _all_winners = _best_combo_per_cluster(all_results, metric)
             _best_map_sdf = _sdf_from_cluster_winners(
                 ablation_combos, _all_winners, "Error (|Pred − Obs|)", "Mean",
@@ -1612,7 +1875,6 @@ with tab_global:
         # Mesma ideia do mapa acima, mas 1 mapa por trimestre (DJF/MAM/JJA/
         # SON), cada um "costurado" com o vencedor daquele cluster NAQUELE
         # trimestre especificamente (não o vencedor do ano inteiro).
-        st.markdown("**Best per cluster × quarter — spatial error**")
         _quarters_for_maps = [
             s for s in ("DJF", "MAM", "JJA", "SON") if s in all_results["season"].unique()
         ]
@@ -1716,7 +1978,7 @@ with tab_global:
             styled, use_container_width=True, hide_index=True, key="ablation_delta_table",
         )
 
-        with st.expander("LazyPredict — top 5 models per configuration"):
+        with st.expander("ML Models — top 5 per configuration"):
             lazy_top5_df = build_lazy_top5_per_arm(ablation_combos, panel_season, panel_cluster_choice)
             st.plotly_chart(
                 build_lazy_top5_chart(lazy_top5_df),
@@ -1730,9 +1992,13 @@ with tab_global:
                     use_container_width=True, hide_index=True, key="lazy_top5_table",
                 )
 
+with tab_global:
+    _render_tab_global()
+
 # ── Seção 2: Spatial & Temporal Error Inspector ───────────────────────────────
 
-with tab_inspector:
+@st.fragment
+def _render_tab_inspector():
     _obs_sdf = None
     _shared_cmin = _shared_cmax = None
     _arms_with_data = [a for a in ABLATION_ARMS if any(c["arm"] == a for c in ablation_combos)]
@@ -1794,7 +2060,7 @@ with tab_inspector:
         multi_panels = [
             ("Observed (INMET)", _obs_sdf),
             ("ERA5", _era5_sdf),
-            ("LazyPredict", _lazy_sdf),
+            ("ML Models", _lazy_sdf),
             ("MLP", _mlp_sdf),
             ("LSTM (TF dual-head)", _lstm_sdf),
         ]
@@ -1944,7 +2210,6 @@ with tab_inspector:
                 width="stretch", key="density_chart",
             )
 
-        st.subheader("Residual behaviour")
         col_ts, col_box = st.columns(2)
         mlp_selected = [c for c in selected_combos if c["pipeline"] == "mlp"]
         other_selected = [c for c in selected_combos if c["pipeline"] != "mlp"]
@@ -1966,11 +2231,15 @@ with tab_inspector:
                     width="stretch", key="residual_boxplot_chart",
                 )
             else:
-                st.info("Select LazyPredict and/or LSTM to see their residual distribution.", icon="ℹ️")
+                st.info("Select ML Models and/or LSTM to see their residual distribution.", icon="ℹ️")
+
+with tab_inspector:
+    _render_tab_inspector()
 
 # ── Seção 3: Model Diagnostics & Explainability ───────────────────────────────
 
-with tab_diag:
+@st.fragment
+def _render_tab_diag():
     if not selected_combos:
         st.info("Pick at least one pipeline and configuration in the sidebar to see diagnostics.", icon="ℹ️")
     else:
@@ -2016,3 +2285,131 @@ with tab_diag:
                     )
 
             st.divider()
+
+with tab_diag:
+    _render_tab_diag()
+
+# ── Seção 4: Corrected Grid Explorer ──────────────────────────────────────────
+
+@st.fragment
+def _render_tab_grid():
+    _grid_bounds = corrected_grid_date_bounds()
+    if _grid_bounds is None:
+        st.info(
+            "No corrected grid synced yet. Run "
+            "`scripts/sync_corrected_grid_to_dashboard.py` from the research "
+            "repo after `src/dataset/creation/grid_generator.py` finishes.",
+            icon="ℹ️",
+        )
+    else:
+        _gmin, _gmax = _grid_bounds
+
+        # Seletor de estação PRÓPRIO (não usa o global_station da barra
+        # lateral): esse é escopado ao cluster selecionado ali (relevante só
+        # pra matriz de ablation), enquanto o grid v1 é cluster-agnóstico —
+        # reusar global_station faria a seleção "sumir" sempre que a estação
+        # escolhida não pertencesse ao cluster atual da barra lateral.
+        _grid_all_stations = stations_geo_df["estacao"].tolist()
+        col_gdate, col_gstation = st.columns([1, 2])
+        with col_gdate:
+            grid_date = st.date_input(
+                "Data do mapa", value=pd.Timestamp("2020-05-15"),
+                min_value=_gmin.date(), max_value=_gmax.date(),
+                key="grid_map_date",
+            )
+        with col_gstation:
+            grid_station_choice = st.selectbox(
+                "Estação", ["(none)"] + _grid_all_stations,
+                key="grid_station_select",
+            )
+        grid_station = None if grid_station_choice == "(none)" else grid_station_choice
+
+        grid_snapshot = corrected_grid_snapshot(str(grid_date))
+
+        col_map1, col_map2 = st.columns(2)
+        with col_map1:
+            st.plotly_chart(
+                build_grid_map(
+                    grid_snapshot, "ws_original", stations_geo_df,
+                    grid_station, "ERA5 original", show_colorbar=False,
+                ),
+                use_container_width=True, key="grid_map_original",
+            )
+        with col_map2:
+            st.plotly_chart(
+                build_grid_map(
+                    grid_snapshot, "rajada_max_corrigida", stations_geo_df,
+                    grid_station, "ERA5 corrigido", show_colorbar=True,
+                ),
+                use_container_width=True, key="grid_map_corrected",
+            )
+
+        if grid_station is None:
+            st.info("Select a station above to see its time series.", icon="ℹ️")
+        else:
+            _st_row = stations_geo_df[stations_geo_df["estacao"] == grid_station]
+            if _st_row.empty:
+                st.warning(f"Station {grid_station} not found in stations_metadata.csv.")
+            else:
+                _st_lat = float(_st_row["latitude"].iloc[0])
+                _st_lon = float(_st_row["longitude"].iloc[0])
+                grid_series = corrected_grid_station_series(_st_lat, _st_lon)
+                inmet_series = load_inmet_station_series(grid_station)
+                st.plotly_chart(
+                    build_grid_station_timeseries(
+                        grid_station, grid_series, inmet_series, grid_date.year,
+                    ),
+                    use_container_width=True, key="grid_station_timeseries",
+                )
+
+        st.divider()
+        extreme_metric = st.selectbox(
+            "Métrica", list(INTERP_METRICS),
+            index=list(INTERP_METRICS).index("P95"),
+            key="grid_extreme_metric",
+        )
+
+        _grid_pct = grid_station_percentile_values(extreme_metric, stations_geo_df).dropna(
+            subset=["era5_original", "era5_corrected"],
+        )
+
+        if len(_grid_pct) < 2:
+            st.info("Not enough stations to build the maps.", icon="ℹ️")
+        else:
+            # Valor de vento (não erro) das duas bases no percentil escolhido —
+            # mais interpretativo: mostra diretamente "quanto vento" cada base
+            # captura na cauda extrema, em vez de uma métrica abstrata de erro.
+            _val_orig_sdf = _grid_pct[["estacao", "latitude", "longitude", "cluster_id", "era5_original"]].rename(
+                columns={"era5_original": "value"},
+            )
+            _val_corr_sdf = _grid_pct[["estacao", "latitude", "longitude", "cluster_id", "era5_corrected"]].rename(
+                columns={"era5_corrected": "value"},
+            )
+            _val_all = pd.concat([_val_orig_sdf["value"], _val_corr_sdf["value"]], ignore_index=True)
+            _val_cmin, _val_cmax = float(_val_all.min()), float(_val_all.max())
+
+            col_val1, col_val2 = st.columns(2)
+            with col_val1:
+                st.markdown(f"**ERA5 original — {extreme_metric}**")
+                st.plotly_chart(
+                    build_interp_map(
+                        _val_orig_sdf, "IDW (original)", False,
+                        cmin_override=_val_cmin, cmax_override=_val_cmax,
+                        height=380, show_colorbar=False,
+                    ),
+                    use_container_width=True, key="grid_extreme_value_original",
+                )
+            with col_val2:
+                st.markdown(f"**ERA5 corrigido — {extreme_metric}**")
+                st.plotly_chart(
+                    build_interp_map(
+                        _val_corr_sdf, "IDW (original)", False,
+                        cmin_override=_val_cmin, cmax_override=_val_cmax,
+                        height=380, show_colorbar=True,
+                    ),
+                    use_container_width=True, key="grid_extreme_value_corrected",
+                )
+
+
+with tab_grid:
+    _render_tab_grid()
