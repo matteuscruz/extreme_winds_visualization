@@ -2338,7 +2338,7 @@ def _render_tab_grid():
             st.plotly_chart(
                 build_grid_map(
                     grid_snapshot, "ws_original", stations_geo_df,
-                    grid_station, "ERA5 original", show_colorbar=False,
+                    grid_station, "ERA5", show_colorbar=False,
                 ),
                 use_container_width=True, key="grid_map_original",
             )
@@ -2346,7 +2346,7 @@ def _render_tab_grid():
             st.plotly_chart(
                 build_grid_map(
                     grid_snapshot, "rajada_max_corrigida", stations_geo_df,
-                    grid_station, "ERA5 corrigido", show_colorbar=True,
+                    grid_station, "AI", show_colorbar=True,
                 ),
                 use_container_width=True, key="grid_map_corrected",
             )
@@ -2397,7 +2397,7 @@ def _render_tab_grid():
 
             col_val1, col_val2 = st.columns(2)
             with col_val1:
-                st.markdown(f"**ERA5 original — {extreme_metric}**")
+                st.markdown(f"**ERA5: {extreme_metric}**")
                 st.plotly_chart(
                     build_interp_map(
                         _val_orig_sdf, "IDW (original)", False,
@@ -2407,7 +2407,7 @@ def _render_tab_grid():
                     use_container_width=True, key="grid_extreme_value_original",
                 )
             with col_val2:
-                st.markdown(f"**ERA5 corrigido — {extreme_metric}**")
+                st.markdown(f"**AI: {extreme_metric}**")
                 st.plotly_chart(
                     build_interp_map(
                         _val_corr_sdf, "IDW (original)", False,
