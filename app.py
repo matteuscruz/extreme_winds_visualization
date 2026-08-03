@@ -1462,11 +1462,18 @@ def load_corrected_grid() -> xr.Dataset:
     `rajada_corrigida - bias` (ver `rajada_corrigida = era5_vals + bias_grid`
     em grid_generator.py) — evita carregar o ERA5-Basin bruto (~6GB), que
     não vive neste repo. cache_resource (não cache_data): mantém o mesmo
-    xr.Dataset dask-backed entre reruns, em vez de serializar via pickle."""
+    xr.Dataset entre reruns, em vez de serializar via pickle.
+
+    Abre cada arquivo com open_dataset e combina em memória (combine_by_coords)
+    em vez de open_mfdataset — este último exige `dask` (chunkmanager), que não
+    está instalado na nuvem. Os grids são pequenos (~16MB/ano), então carregar
+    tudo eager em numpy é barato e dispensa a dependência pesada."""
     files = sorted(CORRECTED_GRID_DIR.glob("grid_corrected_*.nc"))
     if not files:
         return xr.Dataset()
-    ds = xr.open_mfdataset(files, combine="by_coords").sortby("time")
+    ds = xr.combine_by_coords(
+        [xr.open_dataset(f) for f in files]
+    ).sortby("time")
     ds["ws_original"] = ds["rajada_max_corrigida"] - ds["bias"]
     return ds
 
