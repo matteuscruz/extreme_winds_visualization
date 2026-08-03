@@ -1159,6 +1159,7 @@ def build_interp_map(
     height: int = 520, show_colorbar: bool = True,
     mask_geom=None, bounds_override: dict | None = None,
     hover_extra_by_station: dict[str, str] | None = None,
+    stations_only: bool = False,
 ) -> go.Figure:
     """Mapa Plotly: campo interpolado (grade, pontos minúsculos e esmaecidos —
     é estimativa) + estações (círculos grandes com halo — é dado real). Mesma
@@ -1176,7 +1177,12 @@ def build_interp_map(
     `hover_extra_by_station` (dict estacao -> texto multi-linha, opcional):
     quando informado, o hover de CADA estação mostra o valor dela em TODOS
     os painéis (Observado/ERA5/LazyPredict/MLP/LSTM), não só o deste painel
-    — permite comparar os 5 valores sem trocar de mapa."""
+    — permite comparar os 5 valores sem trocar de mapa.
+
+    `stations_only` (bool): mostra só os pontos reais das estações, sem a grade
+    IDW nem o contorno de área — usado no painel "Observed (INMET)", já que o
+    observado é verdade de campo (não uma saída de modelo) e interpolá-lo não
+    representa nada de novo."""
     _theme = _map_theme_colors()
     map_style, halo_color = _theme["map_style"], _theme["halo_color"]
     boundary_color, font_color = _theme["boundary_color"], _theme["font_color"]
@@ -1195,25 +1201,32 @@ def build_interp_map(
     lon = sdf["longitude"].to_numpy(float)
     lat = sdf["latitude"].to_numpy(float)
     val = sdf["value"].to_numpy(float)
-    flon, flat, fz = _idw_grid(lon, lat, val, INTERP_METHODS[method_label])
 
-    # Recorte + contorno da área com dado: usa mask_geom se foi passado
-    # (Seção 2 — cluster/bacia focada, compartilhado entre painéis); senão
-    # deriva automaticamente a união dos clusters presentes no próprio sdf
-    # (Seção 1 — mapas "melhor por cluster", que antes ficavam sem recorte
-    # nenhum e o campo IDW se espalhava pelo retângulo bounding-box inteiro,
-    # inclusive fora de qualquer cluster com dado).
-    if mask_geom is not None:
-        boundary_geom = mask_geom
+    # stations_only: só os pontos reais (Observed/INMET) — pula a grade IDW e
+    # o contorno de área (não se interpola verdade de campo).
+    if stations_only:
+        flon = flat = fz = np.array([])
+        boundary_geom = None
     else:
-        per_polygon, basin_union = load_basin_geometries()
-        cluster_ids = sdf["cluster_id"].unique() if "cluster_id" in sdf.columns else []
-        present = {f"{int(float(c)):02d}" for c in cluster_ids}
-        geoms = [per_polygon[c] for c in present if c in per_polygon]
-        boundary_geom = shapely.union_all(geoms) if geoms else basin_union
-    shapely.prepare(boundary_geom)
-    inside = shapely.contains(boundary_geom, shapely.points(flon, flat))
-    flon, flat, fz = flon[inside], flat[inside], fz[inside]
+        flon, flat, fz = _idw_grid(lon, lat, val, INTERP_METHODS[method_label])
+
+        # Recorte + contorno da área com dado: usa mask_geom se foi passado
+        # (Seção 2 — cluster/bacia focada, compartilhado entre painéis); senão
+        # deriva automaticamente a união dos clusters presentes no próprio sdf
+        # (Seção 1 — mapas "melhor por cluster", que antes ficavam sem recorte
+        # nenhum e o campo IDW se espalhava pelo retângulo bounding-box inteiro,
+        # inclusive fora de qualquer cluster com dado).
+        if mask_geom is not None:
+            boundary_geom = mask_geom
+        else:
+            per_polygon, basin_union = load_basin_geometries()
+            cluster_ids = sdf["cluster_id"].unique() if "cluster_id" in sdf.columns else []
+            present = {f"{int(float(c)):02d}" for c in cluster_ids}
+            geoms = [per_polygon[c] for c in present if c in per_polygon]
+            boundary_geom = shapely.union_all(geoms) if geoms else basin_union
+        shapely.prepare(boundary_geom)
+        inside = shapely.contains(boundary_geom, shapely.points(flon, flat))
+        flon, flat, fz = flon[inside], flat[inside], fz[inside]
 
     allv = np.concatenate([fz[np.isfinite(fz)], val])
     if is_diff:
@@ -1252,23 +1265,28 @@ def build_interp_map(
     station_halo_marker = {"size": 9, "color": halo_color}
     station_marker = {
         "size": 7, "color": val, "colorscale": cscale, "cmin": cmin,
-        "cmax": cmax, "showscale": False,
+        "cmax": cmax, "showscale": show_colorbar if stations_only else False,
     }
+    # Sem o campo IDW (stations_only), a colorbar tem que sair do marcador de
+    # estação — senão o painel Observed nunca mostraria a escala quando pedida.
+    if stations_only and show_colorbar:
+        station_marker["colorbar"] = {"title": "m/s"}
     if cmid is not None:
         field_marker["cmid"] = cmid
         station_marker["cmid"] = cmid
 
-    b_lons, b_lats = _polygon_boundary_lonlat(boundary_geom)
-    fig.add_trace(go.Scattermap(
-        lat=b_lats, lon=b_lons, mode="lines",
-        line={"width": 1.5, "color": boundary_color},
-        hoverinfo="skip", showlegend=False, name="Data coverage",
-    ))
-    fig.add_trace(go.Scattermap(
-        lat=flat, lon=flon, mode="markers", marker=field_marker,
-        hovertemplate="%{lat:.2f}, %{lon:.2f}<br>~%{marker.color:.2f} m/s (estimated)<extra></extra>",
-        showlegend=False,
-    ))
+    if not stations_only:
+        b_lons, b_lats = _polygon_boundary_lonlat(boundary_geom)
+        fig.add_trace(go.Scattermap(
+            lat=b_lats, lon=b_lons, mode="lines",
+            line={"width": 1.5, "color": boundary_color},
+            hoverinfo="skip", showlegend=False, name="Data coverage",
+        ))
+        fig.add_trace(go.Scattermap(
+            lat=flat, lon=flon, mode="markers", marker=field_marker,
+            hovertemplate="%{lat:.2f}, %{lon:.2f}<br>~%{marker.color:.2f} m/s (estimated)<extra></extra>",
+            showlegend=False,
+        ))
     fig.add_trace(go.Scattermap(
         lat=lat, lon=lon, mode="markers", marker=station_halo_marker,
         hoverinfo="skip", showlegend=False,
@@ -2173,6 +2191,7 @@ def _render_tab_inspector():
                             mask_geom=_mask_geom, bounds_override=_shared_bounds,
                             show_colorbar=(i == _last_valid_idx),
                             hover_extra_by_station=_hover_extra_by_station,
+                            stations_only=(label == "Observed (INMET)"),
                         ),
                         use_container_width=True, key=f"multi_map_{label}",
                     )
