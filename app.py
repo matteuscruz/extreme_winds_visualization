@@ -1160,6 +1160,7 @@ def build_interp_map(
     mask_geom=None, bounds_override: dict | None = None,
     hover_extra_by_station: dict[str, str] | None = None,
     stations_only: bool = False,
+    station_val_override: np.ndarray | None = None,
 ) -> go.Figure:
     """Mapa Plotly: campo interpolado (grade, pontos minúsculos e esmaecidos —
     é estimativa) + estações (círculos grandes com halo — é dado real). Mesma
@@ -1182,7 +1183,14 @@ def build_interp_map(
     `stations_only` (bool): mostra só os pontos reais das estações, sem a grade
     IDW nem o contorno de área — usado no painel "Observed (INMET)", já que o
     observado é verdade de campo (não uma saída de modelo) e interpolá-lo não
-    representa nada de novo."""
+    representa nada de novo.
+
+    `station_val_override` (array alinhado às linhas de `sdf`, opcional):
+    cor/hover dos CÍRCULOS de estação usa esse valor em vez de `sdf["value"]`
+    — o campo IDW de fundo continua vindo de `sdf["value"]` normalmente. Uso:
+    campo = ERA5 (original/corrigido) num pixel, círculo = INMET observado de
+    verdade naquela estação, pra comparar visualmente modelo vs. verdade-
+    terreno sem precisar calcular um erro à parte."""
     _theme = _map_theme_colors()
     map_style, halo_color = _theme["map_style"], _theme["halo_color"]
     boundary_color, font_color = _theme["boundary_color"], _theme["font_color"]
@@ -1201,6 +1209,10 @@ def build_interp_map(
     lon = sdf["longitude"].to_numpy(float)
     lat = sdf["latitude"].to_numpy(float)
     val = sdf["value"].to_numpy(float)
+    station_val = (
+        np.asarray(station_val_override, dtype=float)
+        if station_val_override is not None else val
+    )
 
     # stations_only: só os pontos reais (Observed/INMET) — pula a grade IDW e
     # o contorno de área (não se interpola verdade de campo).
@@ -1228,7 +1240,7 @@ def build_interp_map(
         inside = shapely.contains(boundary_geom, shapely.points(flon, flat))
         flon, flat, fz = flon[inside], flat[inside], fz[inside]
 
-    allv = np.concatenate([fz[np.isfinite(fz)], val])
+    allv = np.concatenate([fz[np.isfinite(fz)], val, station_val])
     if is_diff:
         m = float(np.nanmax(np.abs(allv))) or 1.0
         cmin, cmax, cmid, cscale = -m, m, 0, "RdBu_r"
@@ -1264,7 +1276,7 @@ def build_interp_map(
     # nativo do Scattermap, sem essa dependência — sempre aparece.
     station_halo_marker = {"size": 9, "color": halo_color}
     station_marker = {
-        "size": 7, "color": val, "colorscale": cscale, "cmin": cmin,
+        "size": 7, "color": station_val, "colorscale": cscale, "cmin": cmin,
         "cmax": cmax, "showscale": show_colorbar if stations_only else False,
     }
     # Sem o campo IDW (stations_only), a colorbar tem que sair do marcador de
@@ -1301,7 +1313,9 @@ def build_interp_map(
             "%{customdata[2]}<extra></extra>"
         )
     else:
-        station_customdata = sdf[["estacao", "cluster_id", "value"]].values
+        station_customdata = np.column_stack([
+            sdf["estacao"].to_numpy(), sdf["cluster_id"].to_numpy(), station_val,
+        ])
         station_hovertemplate = (
             "<b>%{customdata[0]}</b> (actual data)<br>Cluster %{customdata[1]}<br>"
             "%{customdata[2]:.2f} m/s<extra></extra>"
@@ -1931,7 +1945,20 @@ def _render_tab_global():
             quarter_map_cols = st.columns(len(_quarters_for_maps))
             for i, (q_col, (quarter, q_sdf)) in enumerate(zip(quarter_map_cols, _quarter_sdfs)):
                 with q_col:
-                    st.caption(quarter)
+                    st.caption(
+                        f"{quarter} ({len(q_sdf)} stations)",
+                        help=(
+                            "Count = stations with at least one valid "
+                            "prediction in this specific quarter, not the "
+                            "full network size — not every station reports "
+                            "year-round (sensor gaps, decommissioning "
+                            "mid-year, etc.), so counts differ across "
+                            "DJF/MAM/JJA/SON even though the station network "
+                            "itself is fixed. DJF also spans the calendar-"
+                            "year boundary (Dec+Jan+Feb), unlike the other "
+                            "three quarters, which adds to the difference."
+                        ),
+                    )
                     if q_sdf.empty or len(q_sdf) < 2:
                         st.caption("No data.")
                     else:
@@ -2398,6 +2425,11 @@ def _render_tab_grid():
         _grid_pct = grid_station_percentile_values(extreme_metric, stations_geo_df).dropna(
             subset=["era5_original", "era5_corrected"],
         )
+        _inmet_pct = load_inmet_observed(extreme_metric, stations_geo_df)
+        _grid_pct = _grid_pct.merge(
+            _inmet_pct[["estacao", "value"]].rename(columns={"value": "inmet_value"}),
+            on="estacao", how="inner",
+        ).dropna(subset=["inmet_value"])
 
         if len(_grid_pct) < 2:
             st.info("Not enough stations to build the maps.", icon="ℹ️")
@@ -2405,23 +2437,30 @@ def _render_tab_grid():
             # Valor de vento (não erro) das duas bases no percentil escolhido —
             # mais interpretativo: mostra diretamente "quanto vento" cada base
             # captura na cauda extrema, em vez de uma métrica abstrata de erro.
+            # Os CÍRCULOS de estação mostram o valor REAL do INMET (verdade-
+            # terreno), não o pixel do ERA5 — só o campo de fundo (raster IDW)
+            # vem do ERA5; assim dá pra comparar visualmente modelo vs. real.
+            _inmet_vals = _grid_pct["inmet_value"].to_numpy(float)
             _val_orig_sdf = _grid_pct[["estacao", "latitude", "longitude", "cluster_id", "era5_original"]].rename(
                 columns={"era5_original": "value"},
             )
             _val_corr_sdf = _grid_pct[["estacao", "latitude", "longitude", "cluster_id", "era5_corrected"]].rename(
                 columns={"era5_corrected": "value"},
             )
-            _val_all = pd.concat([_val_orig_sdf["value"], _val_corr_sdf["value"]], ignore_index=True)
+            _val_all = pd.concat(
+                [_val_orig_sdf["value"], _val_corr_sdf["value"], pd.Series(_inmet_vals)], ignore_index=True,
+            )
             _val_cmin, _val_cmax = float(_val_all.min()), float(_val_all.max())
 
             col_val1, col_val2 = st.columns(2)
             with col_val1:
-                st.markdown(f"**ERA5: {extreme_metric}**")
+                st.markdown(f"**ERA5 & INMET: {extreme_metric}**")
                 st.plotly_chart(
                     build_interp_map(
                         _val_orig_sdf, "IDW (original)", False,
                         cmin_override=_val_cmin, cmax_override=_val_cmax,
                         height=380, show_colorbar=False,
+                        station_val_override=_inmet_vals,
                     ),
                     use_container_width=True, key="grid_extreme_value_original",
                 )
