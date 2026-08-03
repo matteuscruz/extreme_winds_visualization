@@ -17,6 +17,11 @@ dataset/*.csv
 # (371MB) continua ignorado — não é lido em lugar nenhum de app.py hoje.
 !dataset/raw/INMET_Stratified.nc
 
+# Grid corrigido V1 (artifacts/corrected_grid/v1/grid_corrected_*.nc, ~16MB
+# cada) É lido por load_corrected_grid() na aba V1 — precisa estar versionado
+# pro app na nuvem ter acesso, senão cai no fallback "No corrected grid synced".
+!artifacts/corrected_grid/v1/*.nc
+
 # Gráficos e relatórios (o app lê só CSV/JSON)
 artifacts/**/plots/
 artifacts/**/*.pdf
