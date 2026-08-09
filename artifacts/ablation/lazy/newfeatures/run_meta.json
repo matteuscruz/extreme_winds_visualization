@@ -1,6 +1,6 @@
 {
   "experiment": "newfeatures",
-  "timestamp": "2026-07-24T13:17:25.228305+00:00",
+  "timestamp": "2026-08-07T15:25:39.269105+00:00",
   "cluster_merge": null,
   "merge_groups": [],
   "synthetic_csv": null,
@@ -141,70 +141,59 @@
   ],
   "ablation_group": "newfeatures",
   "train_slice": [
-    "2020-01-01",
-    "2022-12-31"
+    "2008-01-01",
+    "2018-12-31"
   ],
   "val_slice": [
-    "2023-01-01",
-    "2023-12-31"
+    "2019-01-01",
+    "2019-12-31"
   ],
   "clusters": {
     "4": {
       "n_stations": 6,
-      "n_samples": 9206
+      "n_samples": 33328
     },
     "5": {
-      "n_stations": 15,
-      "n_samples": 21659
+      "n_stations": 9,
+      "n_samples": 43983
     },
     "6": {
-      "n_stations": 16,
-      "n_samples": 19536
-    },
-    "7": {
-      "n_stations": 2,
-      "n_samples": 3433
+      "n_stations": 7,
+      "n_samples": 31625
     },
     "8": {
-      "n_stations": 7,
-      "n_samples": 9592
+      "n_stations": 3,
+      "n_samples": 13040
     }
   },
   "best_per_cluster": [
     {
       "cluster_id": 4,
       "n_stations": 6,
-      "Model": "TweedieRegressor",
-      "R-Squared": 0.6237583007635659,
-      "RMSE": 2.2775889848967177
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.7229481279039112,
+      "RMSE": 1.7360938905319083
     },
     {
       "cluster_id": 5,
-      "n_stations": 15,
-      "Model": "TweedieRegressor",
-      "R-Squared": 0.4756249389088105,
-      "RMSE": 2.399124776062514
+      "n_stations": 9,
+      "Model": "LinearSVR",
+      "R-Squared": 0.6430976884978777,
+      "RMSE": 1.5832593113851836
     },
     {
       "cluster_id": 6,
-      "n_stations": 16,
-      "Model": "TweedieRegressor",
-      "R-Squared": 0.4260074024051449,
-      "RMSE": 2.4524221391436014
-    },
-    {
-      "cluster_id": 7,
-      "n_stations": 2,
-      "Model": "TweedieRegressor",
-      "R-Squared": 0.5631763426687566,
-      "RMSE": 1.6122890444692033
+      "n_stations": 7,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.6390943574871981,
+      "RMSE": 1.6709826543252628
     },
     {
       "cluster_id": 8,
-      "n_stations": 7,
-      "Model": "TweedieRegressor",
-      "R-Squared": 0.4388043270800627,
-      "RMSE": 2.08127800196432
+      "n_stations": 3,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.5746303382448781,
+      "RMSE": 1.6849570981127735
     }
   ]
 }

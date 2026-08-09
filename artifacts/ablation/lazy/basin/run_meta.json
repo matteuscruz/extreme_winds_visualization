@@ -1,0 +1,306 @@
+{
+  "experiment": "basin",
+  "timestamp": "2026-08-07T16:28:31.558931+00:00",
+  "cluster_merge": null,
+  "merge_groups": [],
+  "synthetic_csv": null,
+  "features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_std",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "lag2_wind_mag_max",
+    "lag3_wind_mag_max",
+    "lag7_wind_mag_max",
+    "rolling7d_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "era5_clim_wind",
+    "latitude",
+    "longitude",
+    "lag1_gust_obs",
+    "lag2_gust_obs",
+    "lag3_gust_obs",
+    "rolling7d_gust_obs",
+    "wind_mag_max_anom",
+    "rolling3d_wind_mag_max",
+    "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
+    "cape_18z",
+    "msl_18z",
+    "wind10m_mag_18z",
+    "wind100m_mag_18z",
+    "wind_shear_sfc_18z",
+    "wind_shear_850_300_18z",
+    "wind_shear_850_500_18z",
+    "thickness_1000_500_18z",
+    "lapse_rate_850_500_18z",
+    "q850_18z",
+    "mslp_tendency_18z",
+    "bt55_flag",
+    "bt55_rolling3d",
+    "bt55_rolling7d",
+    "bt55_frac_month",
+    "ws_mean_basin",
+    "ws_max_basin",
+    "ws_std_basin",
+    "sin_dir_mean_basin",
+    "cos_dir_mean_basin",
+    "msl_mean_basin",
+    "d_msl_basin",
+    "t2m_mean_basin",
+    "t2m_range_basin",
+    "rh_mean_basin",
+    "td_dep_mean_basin",
+    "tp_sum_basin"
+  ],
+  "feature_groups": "original,era5_basin",
+  "active_features": [
+    "10m_u_component_of_wind",
+    "10m_v_component_of_wind",
+    "wind_mag",
+    "wind_mag_max",
+    "wind_mag_std",
+    "wind_dir_sin",
+    "wind_dir_cos",
+    "gust_factor",
+    "lag1_wind_mag_max",
+    "lag2_wind_mag_max",
+    "lag3_wind_mag_max",
+    "lag7_wind_mag_max",
+    "rolling7d_wind_mag_max",
+    "2m_temperature",
+    "2m_dewpoint_temperature",
+    "relative_humidity",
+    "t2m_range",
+    "surface_pressure",
+    "pressure_tendency",
+    "total_precipitation",
+    "day_sin",
+    "day_cos",
+    "month_sin",
+    "month_cos",
+    "era5_clim_wind",
+    "latitude",
+    "longitude",
+    "lag1_gust_obs",
+    "lag2_gust_obs",
+    "lag3_gust_obs",
+    "rolling7d_gust_obs",
+    "wind_mag_max_anom",
+    "rolling3d_wind_mag_max",
+    "lag1_pressure_tendency",
+    "ws_p90_basin",
+    "msl_min_basin",
+    "msl_range_basin",
+    "t2m_max_basin",
+    "t2m_min_basin",
+    "rh_p10_basin",
+    "tp_max_basin",
+    "tp_lag1_basin",
+    "tp_lag2_basin",
+    "tp_roll3_basin",
+    "ws_mean_basin",
+    "ws_max_basin",
+    "ws_std_basin",
+    "sin_dir_mean_basin",
+    "cos_dir_mean_basin",
+    "msl_mean_basin",
+    "d_msl_basin",
+    "t2m_mean_basin",
+    "t2m_range_basin",
+    "rh_mean_basin",
+    "td_dep_mean_basin",
+    "tp_sum_basin"
+  ],
+  "ablation_group": "basin",
+  "train_slice": [
+    "2008-01-01",
+    "2018-12-31"
+  ],
+  "val_slice": [
+    "2019-01-01",
+    "2019-12-31"
+  ],
+  "clusters": {
+    "10": {
+      "n_stations": 31,
+      "n_samples": 154396
+    },
+    "11": {
+      "n_stations": 16,
+      "n_samples": 77704
+    },
+    "12": {
+      "n_stations": 19,
+      "n_samples": 97507
+    },
+    "13": {
+      "n_stations": 10,
+      "n_samples": 54468
+    },
+    "14": {
+      "n_stations": 11,
+      "n_samples": 61239
+    },
+    "1": {
+      "n_stations": 4,
+      "n_samples": 25951
+    },
+    "2": {
+      "n_stations": 15,
+      "n_samples": 83322
+    },
+    "3": {
+      "n_stations": 8,
+      "n_samples": 40712
+    },
+    "4": {
+      "n_stations": 28,
+      "n_samples": 150888
+    },
+    "5": {
+      "n_stations": 22,
+      "n_samples": 116549
+    },
+    "6": {
+      "n_stations": 16,
+      "n_samples": 78377
+    },
+    "7": {
+      "n_stations": 9,
+      "n_samples": 48159
+    },
+    "8": {
+      "n_stations": 15,
+      "n_samples": 82228
+    },
+    "9": {
+      "n_stations": 37,
+      "n_samples": 163734
+    }
+  },
+  "best_per_cluster": [
+    {
+      "cluster_id": 1,
+      "n_stations": 4,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.6683227688629689,
+      "RMSE": 1.9328194911856733
+    },
+    {
+      "cluster_id": 2,
+      "n_stations": 15,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.7284729771785015,
+      "RMSE": 1.473148770579251
+    },
+    {
+      "cluster_id": 3,
+      "n_stations": 8,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.792506923397017,
+      "RMSE": 1.822670001355516
+    },
+    {
+      "cluster_id": 4,
+      "n_stations": 28,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.7732278789429747,
+      "RMSE": 1.980805155877349
+    },
+    {
+      "cluster_id": 5,
+      "n_stations": 22,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6160167919882902,
+      "RMSE": 1.6884402678901715
+    },
+    {
+      "cluster_id": 6,
+      "n_stations": 16,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6120272928002966,
+      "RMSE": 1.7119494306092735
+    },
+    {
+      "cluster_id": 7,
+      "n_stations": 9,
+      "Model": "HuberRegressor",
+      "R-Squared": 0.581940470975755,
+      "RMSE": 1.411175298137217
+    },
+    {
+      "cluster_id": 8,
+      "n_stations": 15,
+      "Model": "ExtraTreesRegressor",
+      "R-Squared": 0.6118116360423521,
+      "RMSE": 1.4809223548198776
+    },
+    {
+      "cluster_id": 9,
+      "n_stations": 37,
+      "Model": "TweedieRegressor",
+      "R-Squared": 0.4726082664848898,
+      "RMSE": 2.2175892313958463
+    },
+    {
+      "cluster_id": 10,
+      "n_stations": 31,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.5899287326928868,
+      "RMSE": 1.6704034305959297
+    },
+    {
+      "cluster_id": 11,
+      "n_stations": 16,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6834435406200567,
+      "RMSE": 1.433010589250016
+    },
+    {
+      "cluster_id": 12,
+      "n_stations": 19,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.6614996008136675,
+      "RMSE": 1.6336026222361395
+    },
+    {
+      "cluster_id": 13,
+      "n_stations": 10,
+      "Model": "CatBoostRegressor",
+      "R-Squared": 0.5047368217552539,
+      "RMSE": 1.7080196145731503
+    },
+    {
+      "cluster_id": 14,
+      "n_stations": 11,
+      "Model": "GradientBoostingRegressor",
+      "R-Squared": 0.4300066856194596,
+      "RMSE": 1.558757063991333
+    }
+  ]
+}

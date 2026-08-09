@@ -1,6 +1,6 @@
 {
   "experiment": "all",
-  "timestamp": "2026-07-24T15:30:50.614045+00:00",
+  "timestamp": "2026-08-08T16:47:29.900919+00:00",
   "model_name": "cluster_dual_head_lstm",
   "model_params": {
     "units": 64,
@@ -13,16 +13,16 @@
     "extreme_threshold": 1.5
   },
   "train_slice": [
-    "2020-01-01",
-    "2022-12-31"
+    "2008-01-01",
+    "2018-12-31"
   ],
   "val_slice": [
-    "2023-01-01",
-    "2023-12-31"
+    "2019-01-01",
+    "2019-12-31"
   ],
   "test_slice": [
-    "2024-01-01",
-    "2024-12-31"
+    "2020-01-01",
+    "2025-12-31"
   ],
   "augmentation": {
     "method": "none",
@@ -55,7 +55,7 @@
       "y_target": 2.0
     }
   },
-  "synthetic_csv": null,
+  "synthetic_csv": "/artifacts/synthetic/synthetic_augment.csv",
   "feature_groups": "original,era5_18z,bt55",
   "active_features": [
     "10m_u_component_of_wind",
@@ -136,14 +136,14 @@
   "best_per_cluster": [
     {
       "cluster_id": "4",
-      "season": "MAM",
-      "n_samples": 498,
-      "R2": 0.5251,
-      "RMSE": 2.409,
-      "Bias": 0.415,
-      "Bias_P90": -1.663,
-      "RMSE_P90": 3.541,
-      "Corr": 0.758,
+      "season": "JJA",
+      "n_samples": 2166,
+      "R2": 0.2106,
+      "RMSE": 3.1,
+      "Bias": 1.42,
+      "Bias_P90": 1.069,
+      "RMSE_P90": 4.625,
+      "Corr": 0.755,
       "pipeline": "lstm",
       "experiment": "all",
       "split": "test"
@@ -151,13 +151,13 @@
     {
       "cluster_id": "5",
       "season": "JJA",
-      "n_samples": 1282,
-      "R2": 0.4935,
-      "RMSE": 1.722,
-      "Bias": 0.05,
-      "Bias_P90": -1.343,
-      "RMSE_P90": 2.393,
-      "Corr": 0.73,
+      "n_samples": 5392,
+      "R2": 0.2415,
+      "RMSE": 2.634,
+      "Bias": 0.68,
+      "Bias_P90": -0.244,
+      "RMSE_P90": 4.646,
+      "Corr": 0.699,
       "pipeline": "lstm",
       "experiment": "all",
       "split": "test"
@@ -165,13 +165,13 @@
     {
       "cluster_id": "6",
       "season": "JJA",
-      "n_samples": 1027,
-      "R2": 0.4677,
-      "RMSE": 2.028,
-      "Bias": 0.168,
-      "Bias_P90": -2.428,
-      "RMSE_P90": 3.488,
-      "Corr": 0.698,
+      "n_samples": 4278,
+      "R2": 0.3055,
+      "RMSE": 2.508,
+      "Bias": 0.699,
+      "Bias_P90": -0.901,
+      "RMSE_P90": 3.927,
+      "Corr": 0.7,
       "pipeline": "lstm",
       "experiment": "all",
       "split": "test"
@@ -179,13 +179,13 @@
     {
       "cluster_id": "7",
       "season": "JJA",
-      "n_samples": 184,
-      "R2": 0.6329,
-      "RMSE": 1.205,
-      "Bias": -0.217,
-      "Bias_P90": -1.498,
-      "RMSE_P90": 2.088,
-      "Corr": 0.807,
+      "n_samples": 910,
+      "R2": 0.3582,
+      "RMSE": 1.797,
+      "Bias": -0.007,
+      "Bias_P90": -1.565,
+      "RMSE_P90": 3.094,
+      "Corr": 0.684,
       "pipeline": "lstm",
       "experiment": "all",
       "split": "test"
@@ -193,13 +193,13 @@
     {
       "cluster_id": "8",
       "season": "JJA",
-      "n_samples": 508,
-      "R2": 0.5741,
-      "RMSE": 1.565,
-      "Bias": -0.132,
-      "Bias_P90": -1.184,
-      "RMSE_P90": 2.708,
-      "Corr": 0.787,
+      "n_samples": 2565,
+      "R2": 0.1941,
+      "RMSE": 2.357,
+      "Bias": 0.872,
+      "Bias_P90": 0.078,
+      "RMSE_P90": 3.585,
+      "Corr": 0.723,
       "pipeline": "lstm",
       "experiment": "all",
       "split": "test"

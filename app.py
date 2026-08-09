@@ -816,7 +816,7 @@ def build_inspector_map(
     ))
 
     fig.update_layout(
-        # Centro/zoom ajustados pra caber as 243 estações do INMET expandido
+        # Centro/zoom ajustados pra caber as 271 estações do INMET expandido
         # (lat -33.7..-14.4, lon -57.1..-39.9 — vai de RS até Minas Gerais),
         # não só o antigo recorte Sul (RS/SC/PR, zoom 5 cortava a metade norte).
         map={"style": _theme["map_style"], "center": {"lat": -24.0, "lon": -48.5}, "zoom": 4},
@@ -1027,7 +1027,7 @@ def aggregate_station_values_by_season(
 @st.cache_data
 def load_inmet_observed(metric_label: str, stations_df: pd.DataFrame) -> pd.DataFrame:
     """Observado (INMET) direto do netCDF bruto (INMET_RAW_PATH) — todas as
-    estações da rede atual (243, sincronizadas manualmente do repo de
+    estações da rede atual (271, sincronizadas manualmente do repo de
     pesquisa), independente de qualquer pipeline/arm já treinado. As 3
     pipelines ainda vão ser re-treinadas com esse INMET expandido; a
     "verdade" (ground truth) não deveria ficar presa ao station-count do
@@ -1562,7 +1562,7 @@ def grid_station_percentile_values(metric_label: str, stations_df: pd.DataFrame)
     """Valor agregado (P90/P95/P99/Mean/Historical max, mesmo INTERP_METRICS
     do resto do dashboard) do ERA5 original e corrigido no pixel mais
     próximo de CADA estação, extraído de uma vez com indexação vetorizada do
-    xarray (em vez de 243 chamadas .sel individuais) — insumo do mapa
+    xarray (em vez de 271 chamadas .sel individuais) — insumo do mapa
     espacial de "captura de extremos" (erro nos percentis altos, onde mora
     o vendaval, não na média)."""
     cols = ["estacao", "latitude", "longitude", "cluster_id", "era5_original", "era5_corrected"]
@@ -1573,7 +1573,7 @@ def grid_station_percentile_values(metric_label: str, stations_df: pd.DataFrame)
     agg, q = INTERP_METRICS[metric_label]
     lat_da = xr.DataArray(stations_df["latitude"].to_numpy(float), dims="estacao")
     lon_da = xr.DataArray(stations_df["longitude"].to_numpy(float), dims="estacao")
-    # .load(): materializa os ~243 pontos extraídos (pequeno) antes do
+    # .load(): materializa os ~271 pontos extraídos (pequeno) antes do
     # quantile — dask recusa quantile com "time" com múltiplos chunks (um
     # chunk por arquivo/ano do open_mfdataset) como dimensão núcleo.
     pts = ds[["ws_original", "rajada_max_corrigida"]].sel(
@@ -2075,7 +2075,7 @@ def _render_tab_inspector():
         _lazy_combo = _combo_for("lazy", multi_arm)
         _lstm_combo = _combo_for("lstm", multi_arm)
 
-        # Observado vem direto do INMET_Stratified.nc bruto (243 estações atuais),
+        # Observado vem direto do INMET_Stratified.nc bruto (271 estações atuais),
         # não de um arm/pipeline já sincronizado — assim não fica preso ao
         # station-count antigo enquanto lazy/mlp/lstm ainda não foram re-treinados
         # com a rede expandida.
