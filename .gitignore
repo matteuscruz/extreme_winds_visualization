@@ -17,10 +17,12 @@ dataset/*.csv
 # (371MB) continua ignorado — não é lido em lugar nenhum de app.py hoje.
 !dataset/raw/INMET_Stratified.nc
 
-# Grid corrigido V1 (artifacts/corrected_grid/v1/grid_corrected_*.nc, ~16MB
-# cada) É lido por load_corrected_grid() na aba V1 — precisa estar versionado
-# pro app na nuvem ter acesso, senão cai no fallback "No corrected grid synced".
-!artifacts/corrected_grid/v1/*.nc
+# Grids corrigidos (artifacts/corrected_grid/<versão>/grid_corrected_*.nc,
+# ~16MB cada) são lidos por load_corrected_grid() na aba "AI database" —
+# precisam estar versionados pro app na nuvem ter acesso, senão cai no
+# fallback "No corrected grid data found". O glob ** cobre TODAS as versões
+# (v1, v1.1, futuras) — a exceção antiga só pegava v1 e deixava a v1.1 de fora.
+!artifacts/corrected_grid/**/*.nc
 
 # Gráficos e relatórios (o app lê só CSV/JSON)
 artifacts/**/plots/
