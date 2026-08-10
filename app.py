@@ -522,7 +522,39 @@ def _sdf_from_cluster_winners(
     return pd.concat(frames, ignore_index=True)[cols] if frames else pd.DataFrame(columns=cols)
 
 
-def build_best_per_cluster_bars(all_results: pd.DataFrame, metric: str) -> go.Figure:
+def _lazy_topn_lookup(combos: list[dict], metric: str, n: int = 3) -> dict:
+    """(arm, cluster_id, season) -> [(Model, score), ...] com os top-n
+    candidatos reais do LazyPredict, direto de lazy_cluster_results.csv
+    (~43 modelos testados por cluster×trimestre, não só o vencedor já
+    reduzido em results.parquet). Só disponível pra metric in {R2, RMSE} —
+    Bias/Bias_P90/RMSE_P90 só são calculados pro vencedor, não por
+    candidato, então não dá pra rankear os demais por essas métricas."""
+    col = {"R2": "R-Squared", "RMSE": "RMSE"}.get(metric)
+    if col is None:
+        return {}
+    ascending = metric == "RMSE"
+    lookup: dict = {}
+    for c in combos:
+        if c["pipeline"] != "lazy":
+            continue
+        p = Path(c["dir"]) / "lazy_cluster_results.csv"
+        if not p.exists():
+            continue
+        df = pd.read_csv(p)
+        if col not in df.columns or "season" not in df.columns:
+            continue
+        df = df[df["season"].notna()]  # só trimestres (DJF/MAM/JJA/SON)
+        for (cid, season), g in df.groupby(["cluster_id", "season"]):
+            top = g.sort_values(col, ascending=ascending).head(n)
+            lookup[(c["arm"], str(cid), str(season))] = list(
+                zip(top["Model"], top[col])
+            )
+    return lookup
+
+
+def build_best_per_cluster_bars(
+    all_results: pd.DataFrame, metric: str, combos: list[dict]
+) -> go.Figure:
     """4 barras por cluster (DJF/MAM/JJA/SON) = a MELHOR combinação
     (pipeline × configuração) daquele trimestre especificamente, entre
     TODAS as testadas (LazyPredict/MLP/LSTM × original/synthetic/
@@ -563,6 +595,28 @@ def build_best_per_cluster_bars(all_results: pd.DataFrame, metric: str) -> go.Fi
     cluster_labels = [f"Cluster {c}" for c in winners_df["cluster_id"]]
     season_labels = winners_df["season"].astype(str).tolist()
 
+    # Quando quem venceu foi o ML Models (LazyPredict), mostra também o
+    # 2º e 3º colocado daquele cluster×trimestre — "ML Models" é na verdade
+    # ~43 candidatos testados, então saber só o R² do vencedor esconde o
+    # quão disputado (ou não) foi o resultado.
+    topn_lookup = _lazy_topn_lookup(combos, metric)
+    breakdown_html = []
+    for _, row in winners_df.iterrows():
+        top = (
+            topn_lookup.get((row["arm"], str(row["cluster_id"]), str(row["season"])), [])
+            if row["pipeline"] == "lazy" else []
+        )
+        if len(top) > 1:  # só vale a pena mostrar se houve disputa (2º/3º lugar)
+            # Ranking vem da validação (mesma etapa que escolhe o vencedor),
+            # não do teste mostrado na linha principal — por isso o #1 pode
+            # ter um valor diferente do R2 já plotado na barra.
+            lines = [f"{i + 1}. {m} — {v:.4f}" for i, (m, v) in enumerate(top)]
+            breakdown_html.append(
+                "<br><br>Candidatos LazyPredict (val):<br>" + "<br>".join(lines)
+            )
+        else:
+            breakdown_html.append("")
+
     # Trace real PRIMEIRO — traces "fantasma" (só pra legenda de cor) antes
     # dela confundem a inferência de tipo do eixo X do Plotly e as barras
     # somem (mesmo bug já visto na versão anterior deste gráfico).
@@ -574,10 +628,11 @@ def build_best_per_cluster_bars(all_results: pd.DataFrame, metric: str) -> go.Fi
         customdata=np.column_stack([
             [PIPELINE_LABELS.get(p, p) for p in winners_df["pipeline"]],
             winners_df["arm"].to_numpy(),
+            breakdown_html,
         ]),
         hovertemplate=(
             "<b>%{x}</b><br>%{customdata[0]} · %{customdata[1]}<br>"
-            f"{metric}: " + "%{y:.4f}<extra></extra>"
+            f"{metric}: " + "%{y:.4f}%{customdata[2]}<extra></extra>"
         ),
     ))
     # Sempre mostra as 3 pipelines na legenda, mesmo as que não venceram
@@ -1889,7 +1944,7 @@ def _render_tab_global():
         # resultado de cada cluster com o combo que venceu ali.
         col_best_cluster, col_best_map = st.columns(2)
         with col_best_cluster:
-            _best_cluster_fig = build_best_per_cluster_bars(all_results, metric)
+            _best_cluster_fig = build_best_per_cluster_bars(all_results, metric, ablation_combos)
             if not _best_cluster_fig.data:
                 st.caption("No data yet.")
             else:
