@@ -1752,6 +1752,23 @@ def build_grid_map(
     return fig
 
 
+def _fmt_year_ranges(years: list[int]) -> str:
+    """[2003,2004,...,2010,2013] -> '2003–2010, 2013' — comprime anos
+    consecutivos em faixas, pra caber num aviso curto."""
+    if not years:
+        return "—"
+    ys = sorted(set(years))
+    ranges, start, prev = [], ys[0], ys[0]
+    for y in ys[1:]:
+        if y == prev + 1:
+            prev = y
+        else:
+            ranges.append((start, prev))
+            start = prev = y
+    ranges.append((start, prev))
+    return ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in ranges)
+
+
 def build_grid_station_timeseries(
     estacao: str | None, series_df: pd.DataFrame, inmet_series: pd.Series, year: int,
 ) -> go.Figure:
@@ -1767,14 +1784,16 @@ def build_grid_station_timeseries(
         return fig
 
     s = series_df[series_df["time"].dt.year == year]
-    # inmet_series vazia (estação sem dado no INMET_Stratified.nc — comum na
-    # rede expandida da v1.1) vem com RangeIndex, que não tem `.year`. Só
-    # filtra por ano quando há dado (aí o índice é DatetimeIndex).
-    obs = (
-        inmet_series[inmet_series.index.year == year]
-        if inmet_series is not None and not inmet_series.empty
-        else None
-    )
+    # INMET falta pra muitas (estação, ano): a rede expandida da v1.1 tem
+    # histórico irregular (ex.: A503 só tem 2003–2010). Filtra por ano E dropa
+    # NaN — senão um ano todo-NaN entrava como trace invisível (a linha some
+    # mas a legenda aparece, confundindo). avail_years guia pro ano certo.
+    # inmet_series vazia (RangeIndex, sem `.year`) é coberta pelo guard.
+    obs, avail_years = None, []
+    if inmet_series is not None and not inmet_series.empty:
+        valid = inmet_series.dropna()
+        avail_years = sorted(valid.index.year.unique().tolist())
+        obs = valid[valid.index.year == year]
 
     fig.add_trace(go.Scatter(
         x=s["time"], y=s["ws_original"], name="ERA5 original (pixel)",
@@ -1789,6 +1808,20 @@ def build_grid_station_timeseries(
             x=obs.index, y=obs.values, name=f"INMET — {estacao}",
             line={"color": "royalblue", "width": 1.5},
         ))
+    elif avail_years:
+        # Sem INMET no ano escolhido, mas a estação tem dado em outros anos —
+        # avisa (em vez de deixar o usuário achar que a linha "sumiu").
+        fig.add_annotation(
+            text=(
+                f"Sem observação INMET de {estacao} em {year}.<br>"
+                f"Anos com dado: {_fmt_year_ranges(avail_years)}"
+            ),
+            xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, align="center",
+            font={"color": "royalblue", "size": 12},
+            bgcolor="rgba(65,105,225,0.12)",
+            bordercolor="royalblue", borderwidth=1, borderpad=6,
+        )
 
     fig.update_layout(
         title=f"Rajada máxima diária — {estacao} ({year})",
