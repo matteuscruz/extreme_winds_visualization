@@ -1767,7 +1767,14 @@ def build_grid_station_timeseries(
         return fig
 
     s = series_df[series_df["time"].dt.year == year]
-    obs = inmet_series[inmet_series.index.year == year] if inmet_series is not None else None
+    # inmet_series vazia (estação sem dado no INMET_Stratified.nc — comum na
+    # rede expandida da v1.1) vem com RangeIndex, que não tem `.year`. Só
+    # filtra por ano quando há dado (aí o índice é DatetimeIndex).
+    obs = (
+        inmet_series[inmet_series.index.year == year]
+        if inmet_series is not None and not inmet_series.empty
+        else None
+    )
 
     fig.add_trace(go.Scatter(
         x=s["time"], y=s["ws_original"], name="ERA5 original (pixel)",
