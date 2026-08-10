@@ -67,10 +67,18 @@ INMET_RAW_PATH = Path("dataset/raw/INMET_Stratified.nc")
 INMET_TARGET_VAR = "daily_wind_gust_max"
 
 # Grid corrigido (sincronizado via scripts/sync_corrected_grid_to_dashboard.py
-# no repo de pesquisa) — versão "v1" do best-model-per-cluster/trimestre, ver
+# no repo de pesquisa) — best-model-per-cluster/trimestre "costurado", ver
 # src/dataset/creation/grid_generator.py. Não passa pela matriz de ablation
 # (ARTIFACTS_DIR acima): é um produto espacial único, não um experimento.
-CORRECTED_GRID_DIR = Path("artifacts/corrected_grid/v1")
+# Múltiplas versões coexistem (v1: dataset INMET original 243 estações;
+# v1.1: dataset expandido 271 estações/2000-2025) — o usuário escolhe qual
+# ver na aba (seletor em _render_tab_grid). Dict em vez de constante única
+# pra dar suporte a comparação entre versões sem sobrescrever a anterior.
+CORRECTED_GRID_VERSIONS = {
+    "v1.1": Path("artifacts/corrected_grid/v1.1"),
+    "v1": Path("artifacts/corrected_grid/v1"),
+}
+CORRECTED_GRID_DEFAULT_VERSION = "v1.1"
 
 # Matriz de ablation (sincronizada de scripts/sync_ablation_to_dashboard.py no
 # repo de pesquisa) — ÚNICA fonte de dado deste dashboard. Nenhum pipeline
@@ -1544,18 +1552,22 @@ def build_importance(importance_df: pd.DataFrame, cluster_id) -> go.Figure:
 # matriz de ablation, com seus próprios loaders.
 
 @st.cache_resource
-def load_corrected_grid() -> xr.Dataset:
+def load_corrected_grid(version: str) -> xr.Dataset:
     """Concatena os .nc anuais e reconstrói o ERA5 original localmente via
     `rajada_corrigida - bias` (ver `rajada_corrigida = era5_vals + bias_grid`
     em grid_generator.py) — evita carregar o ERA5-Basin bruto (~6GB), que
     não vive neste repo. cache_resource (não cache_data): mantém o mesmo
-    xr.Dataset entre reruns, em vez de serializar via pickle.
+    xr.Dataset entre reruns, em vez de serializar via pickle — `version` no
+    cache key dá um xr.Dataset cacheado por versão automaticamente.
 
     Abre cada arquivo com open_dataset e combina em memória (combine_by_coords)
     em vez de open_mfdataset — este último exige `dask` (chunkmanager), que não
     está instalado na nuvem. Os grids são pequenos (~16MB/ano), então carregar
     tudo eager em numpy é barato e dispensa a dependência pesada."""
-    files = sorted(CORRECTED_GRID_DIR.glob("grid_corrected_*.nc"))
+    grid_dir = CORRECTED_GRID_VERSIONS.get(version)
+    if grid_dir is None:
+        return xr.Dataset()
+    files = sorted(grid_dir.glob("grid_corrected_*.nc"))
     if not files:
         return xr.Dataset()
     ds = xr.combine_by_coords(
@@ -1566,8 +1578,8 @@ def load_corrected_grid() -> xr.Dataset:
 
 
 @st.cache_data
-def corrected_grid_date_bounds() -> tuple[pd.Timestamp, pd.Timestamp] | None:
-    ds = load_corrected_grid()
+def corrected_grid_date_bounds(version: str) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    ds = load_corrected_grid(version)
     if not ds.data_vars:
         return None
     times = pd.to_datetime(ds.time.values)
@@ -1575,12 +1587,12 @@ def corrected_grid_date_bounds() -> tuple[pd.Timestamp, pd.Timestamp] | None:
 
 
 @st.cache_data
-def corrected_grid_snapshot(date_str: str) -> pd.DataFrame:
+def corrected_grid_snapshot(date_str: str, version: str) -> pd.DataFrame:
     """Achata o grid num dia pra long-form (longitude/latitude/original/
     corrigido), formato consumido por build_grid_map (mesmo padrão de
     'pontos minúsculos coloridos por valor' de build_interp_map)."""
     cols = ["longitude", "latitude", "ws_original", "rajada_max_corrigida"]
-    ds = load_corrected_grid()
+    ds = load_corrected_grid(version)
     if not ds.data_vars:
         return pd.DataFrame(columns=cols)
     day = ds.sel(time=date_str, method="nearest")
@@ -1595,13 +1607,13 @@ def corrected_grid_snapshot(date_str: str) -> pd.DataFrame:
 
 
 @st.cache_data
-def corrected_grid_station_series(lat: float, lon: float) -> pd.DataFrame:
+def corrected_grid_station_series(lat: float, lon: float, version: str) -> pd.DataFrame:
     """Série temporal (original/corrigido) no PIXEL do grid mais próximo de
     (lat, lon) — comparação correta ponto-a-ponto com uma estação, em vez de
     média espacial da bacia inteira (rajada é um fenômeno local; a média da
     bacia suaviza os picos que uma estação isolada registra)."""
     cols = ["time", "ws_original", "rajada_max_corrigida"]
-    ds = load_corrected_grid()
+    ds = load_corrected_grid(version)
     if not ds.data_vars:
         return pd.DataFrame(columns=cols)
     point = ds.sel(latitude=lat, longitude=lon, method="nearest")
@@ -1613,7 +1625,9 @@ def corrected_grid_station_series(lat: float, lon: float) -> pd.DataFrame:
 
 
 @st.cache_data
-def grid_station_percentile_values(metric_label: str, stations_df: pd.DataFrame) -> pd.DataFrame:
+def grid_station_percentile_values(
+    metric_label: str, stations_df: pd.DataFrame, version: str,
+) -> pd.DataFrame:
     """Valor agregado (P90/P95/P99/Mean/Historical max, mesmo INTERP_METRICS
     do resto do dashboard) do ERA5 original e corrigido no pixel mais
     próximo de CADA estação, extraído de uma vez com indexação vetorizada do
@@ -1621,7 +1635,7 @@ def grid_station_percentile_values(metric_label: str, stations_df: pd.DataFrame)
     espacial de "captura de extremos" (erro nos percentis altos, onde mora
     o vendaval, não na média)."""
     cols = ["estacao", "latitude", "longitude", "cluster_id", "era5_original", "era5_corrected"]
-    ds = load_corrected_grid()
+    ds = load_corrected_grid(version)
     if not ds.data_vars or stations_df.empty:
         return pd.DataFrame(columns=cols)
 
@@ -2401,20 +2415,37 @@ with tab_diag:
 
 @st.fragment
 def _render_tab_grid():
-    _grid_bounds = corrected_grid_date_bounds()
-    if _grid_bounds is None:
+    _available_versions = [
+        v for v in CORRECTED_GRID_VERSIONS
+        if CORRECTED_GRID_VERSIONS[v].exists()
+    ]
+    if not _available_versions:
         st.info(
             "No corrected grid synced yet. Run "
             "`scripts/sync_corrected_grid_to_dashboard.py` from the research "
             "repo after `src/dataset/creation/grid_generator.py` finishes.",
             icon="ℹ️",
         )
+        return
+
+    grid_version = st.selectbox(
+        "Base de dados", _available_versions,
+        index=_available_versions.index(CORRECTED_GRID_DEFAULT_VERSION)
+        if CORRECTED_GRID_DEFAULT_VERSION in _available_versions else 0,
+        key="grid_version_select",
+        help="v1.1: dataset INMET expandido (271 estações, 2000-2025). "
+             "v1: dataset original (243 estações, 2020-2024).",
+    )
+
+    _grid_bounds = corrected_grid_date_bounds(grid_version)
+    if _grid_bounds is None:
+        st.info(f"No corrected grid data found for '{grid_version}'.", icon="ℹ️")
     else:
         _gmin, _gmax = _grid_bounds
 
         # Seletor de estação PRÓPRIO (não usa o global_station da barra
         # lateral): esse é escopado ao cluster selecionado ali (relevante só
-        # pra matriz de ablation), enquanto o grid v1 é cluster-agnóstico —
+        # pra matriz de ablation), enquanto o grid é cluster-agnóstico —
         # reusar global_station faria a seleção "sumir" sempre que a estação
         # escolhida não pertencesse ao cluster atual da barra lateral.
         _grid_all_stations = stations_geo_df["estacao"].tolist()
@@ -2432,7 +2463,7 @@ def _render_tab_grid():
             )
         grid_station = None if grid_station_choice == "(none)" else grid_station_choice
 
-        grid_snapshot = corrected_grid_snapshot(str(grid_date))
+        grid_snapshot = corrected_grid_snapshot(str(grid_date), grid_version)
 
         col_map1, col_map2 = st.columns(2)
         with col_map1:
@@ -2461,7 +2492,7 @@ def _render_tab_grid():
             else:
                 _st_lat = float(_st_row["latitude"].iloc[0])
                 _st_lon = float(_st_row["longitude"].iloc[0])
-                grid_series = corrected_grid_station_series(_st_lat, _st_lon)
+                grid_series = corrected_grid_station_series(_st_lat, _st_lon, grid_version)
                 inmet_series = load_inmet_station_series(grid_station)
                 st.plotly_chart(
                     build_grid_station_timeseries(
@@ -2477,9 +2508,9 @@ def _render_tab_grid():
             key="grid_extreme_metric",
         )
 
-        _grid_pct = grid_station_percentile_values(extreme_metric, stations_geo_df).dropna(
-            subset=["era5_original", "era5_corrected"],
-        )
+        _grid_pct = grid_station_percentile_values(
+            extreme_metric, stations_geo_df, grid_version,
+        ).dropna(subset=["era5_original", "era5_corrected"])
         _inmet_pct = load_inmet_observed(extreme_metric, stations_geo_df)
         _grid_pct = _grid_pct.merge(
             _inmet_pct[["estacao", "value"]].rename(columns={"value": "inmet_value"}),

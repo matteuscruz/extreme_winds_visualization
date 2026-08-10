@@ -25,3 +25,6 @@ dataset/*.csv
 # Gráficos e relatórios (o app lê só CSV/JSON)
 artifacts/**/plots/
 artifacts/**/*.pdf
+
+artifacts/lstm_pytorch/
+artifacts/mlp_clusters/
