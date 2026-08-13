@@ -1,7 +1,9 @@
+![Header](figs/extreme_winds.png)
+
 # IRC Vendaval — Dashboard de Resultados
 
 Visualização interativa da correção de viés de rajadas de vento extremo
-no Sul do Brasil. Os modelos foram treinados com ERA5 para corrigir
+no Sul do Brasil. Os modelos (LazyPredict, MLP, LSTM) foram treinados com ERA5 para corrigir
 sistematicamente o viés em relação às observações INMET.
 
 ## Como rodar
@@ -30,13 +32,21 @@ streamlit run app.py
 
 ## Abas do dashboard
 
-**Explorador MLP**
-- Mapa do Sul do Brasil com polígonos de cluster e estações clicáveis
-- Série temporal observado × predito × ERA5 por estação
-- Distribuição (violin) e scatter com regressão OLS por cluster
-- Métricas de qualidade (R², RMSE, Bias@P90) comparando MLP vs ERA5 bruto
-- Importância de features por permutação
+**Global Comparison Panel**
+- Visão agregada (All clusters) e por cluster das melhores combinações de pipeline × configuração (gráficos de barras e mapas espaciais)
+- Detalhamento de métricas por trimestre (DJF, MAM, JJA, SON)
+- Tabela de deltas de regressão (R², RMSE, Bias) vs ERA5 bruto
+- Ranking top 5 de modelos do screening de machine learning
 
-**Screening LazyPredict**
-- Ranking dos 43 modelos avaliados por cluster com MLPRegressor destacado
-- Tabela completa com R², RMSE e tempo de treino por modelo
+**Spatial & Temporal Error Inspector**
+- Mapas espaciais interativos (IDW, Nearest) comparando lado a lado: Observações INMET, ERA5 original e os resultados preditivos (Lazy, MLP, LSTM)
+- Inspeção por métricas de erro temporais (P90, Max, Mean, etc)
+
+**Model Diagnostics & Explainability**
+- Gráficos de dispersão (scatter plot) e regressão OLS por cluster (Predito vs INMET Observado)
+- Histórico de treinamento (Loss Curves) para arquiteturas deep learning (LSTM)
+- Importância de variáveis (Feature Permutation Importance) para os modelos estruturados (MLP)
+
+**AI database**
+- Explorador do banco de dados unificado final (Corrected Grid Explorer)
+- Séries temporais ponto-a-ponto comparando a rajada diária observada, ERA5 bruto e corrigido
