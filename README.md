@@ -1,6 +1,6 @@
 ![Cabeçalho](figs/extreme_winds.png)
 
-# Rajada de vento extremo — correção de viés
+# Rajada de vento extremo, correção de viés
 
 Painel de resultados da correção de viés de rajada de vento extremo no Sul do
 Brasil. O ERA5 subestima sistematicamente a rajada forte; este projeto treina
@@ -27,14 +27,14 @@ abrindo com a pergunta que responde:
 | Seção | Pergunta |
 |---|---|
 | 1 · O problema | Por que a rajada de vento do ERA5 não serve como está? |
-| 2 · O experimento | O que foi testado — e o que significa cada configuração? |
+| 2 · O experimento | O que foi testado, e o que significa cada configuração? |
 | 3 · O resultado | Qual combinação venceu, e em quê? |
 | 4 · A prova | A correção continua valendo em anos que o modelo nunca viu? |
 | 5 · A estabilidade | O acerto se mantém mês a mês, ou só na média do ano? |
 | 6 · A entrega | O que sai disso na prática, e com que ressalva? |
 
 O **Explorador** é para quem é do projeto: as quatro telas de consulta
-originais, preservadas inteiras — comparação geral, erro no espaço e no tempo,
+originais, preservadas inteiras, comparação geral, erro no espaço e no tempo,
 diagnóstico dos modelos e mapa corrigido. Quem quiser cruzar qualquer
 combinação de abordagem, configuração, área e trimestre continua conseguindo.
 
@@ -68,9 +68,9 @@ artifacts/
 │   ├── predictions.parquet
 │   ├── predictions_by_station.csv
 │   ├── run_meta.json                      # variáveis usadas e recorte de tempo
-│   ├── mlp_cluster_results.csv            # só MLP — inclui o baseline do ERA5
-│   ├── lazy_cluster_results.csv           # só modelos clássicos — todos os candidatos
-│   └── histories.json                     # só LSTM — curva de treino
+│   ├── mlp_cluster_results.csv            # só MLP, inclui o baseline do ERA5
+│   ├── lazy_cluster_results.csv           # só modelos clássicos, todos os candidatos
+│   └── histories.json                     # só LSTM, curva de treino
 ├── corrected_grid/<versão>/               # o produto final: mapa corrigido, um .nc por ano
 dataset/
 ├── raw/INMET_Stratified.nc                # observação, fonte do painel "Observado"
@@ -87,7 +87,7 @@ O painel checa e avisa na tela, em vez de deixar o leitor tropeçar:
 
 - **Cada execução é conferida contra o desenho do experimento.** O painel
   compara os grupos de variáveis registrados em `run_meta.json` com os que o
-  braço deveria usar, e avisa na tela quando não batem — inclusive quando o
+  braço deveria usar, e avisa na tela quando não batem, inclusive quando o
   campo vem vazio, que na pipeline significa "todas as variáveis" e não
   "nenhuma informação". Isso importa porque toda leitura de "quanto
   melhorou" é medida contra a linha de base: se ela não é a linha de base, o
@@ -97,11 +97,11 @@ O painel checa e avisa na tela, em vez de deixar o leitor tropeçar:
   que existem só em parte do território. O painel declara que os metadados
   não registram se o descarte por cobertura estava ligado, então trata isso
   como leitura, não como afirmação.
-- **Braços que viraram execuções gêmeas** — mesma lista de variáveis e mesmo
-  tipo de dado de treino — são apontados: comparar um com o outro não
+- **Braços que viraram execuções gêmeas**, mesma lista de variáveis e mesmo
+  tipo de dado de treino, são apontados: comparar um com o outro não
   responde pergunta nenhuma.
 - **Divergência de recorte de tempo** entre experimentos, se houver, é
   listada antes de qualquer comparação.
 - **Contagem de estações** é mostrada separada por fonte, porque as fontes não
-  concordam entre si — a rede catalogada é maior do que a que cada experimento
+  concordam entre si, a rede catalogada é maior do que a que cada experimento
   conseguiu usar.

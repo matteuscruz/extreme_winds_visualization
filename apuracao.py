@@ -1,5 +1,5 @@
 """
-Apuração — os números que a narrativa mostra.
+Apuração, os números que a narrativa mostra.
 
 Regra desta camada: **nenhum número da tela é digitado à mão.** Tudo aqui é
 lido dos artefatos (`results.parquet`, `run_meta.json`, `*_cluster_results.csv`)
@@ -7,7 +7,7 @@ no momento em que a página carrega, para que o painel não passe a mentir
 quando a pipeline for re-executada com dados novos.
 
 Quando um número não existe no artefato, a função devolve `None` e a tela
-descreve a lacuna — nunca preenche com um valor plausível.
+descreve a lacuna, nunca preenche com um valor plausível.
 """
 
 from __future__ import annotations
@@ -25,46 +25,32 @@ ARMS = ["original", "synthetic", "newfeatures", "all", "basin", "all_basin"]
 
 # Como chamar cada coisa em português, na tela.
 NOME_PIPELINE = {
-    "lazy": "Modelos clássicos",
-    "mlp": "Rede neural (MLP)",
-    "lstm": "Rede recorrente (LSTM)",
+    "lazy": "Modelos clássicos", "mlp": "Rede neural (MLP)", "lstm": "Rede recorrente (LSTM)",
 }
 NOME_ARM = {
-    "original": "Base",
-    "synthetic": "Base + dados sintéticos",
-    "newfeatures": "Variáveis novas",
-    "all": "Tudo",
-    "basin": "Base + bacia",
-    "all_basin": "Tudo + bacia",
+    "original": "Base", "synthetic": "Base + dados sintéticos", "newfeatures": "Variáveis novas", "all": "Tudo", "basin": "Base + bacia", "all_basin": "Tudo + bacia",
 }
 # O desenho do experimento, como a pipeline o declara: duas perguntas
-# cruzadas — mais variáveis × extremos sintéticos. Espelhado aqui para que a
+# cruzadas, mais variáveis × extremos sintéticos. Espelhado aqui para que a
 # tela possa CONFERIR se cada artefato publicado corresponde ao braço que diz
 # ser, em vez de confiar no nome da pasta.
 DESENHO_ABLACAO = {
-    "original":    {"grupos": "original",                          "sinteticos": False},
-    "synthetic":   {"grupos": "original",                          "sinteticos": True},
-    "newfeatures": {"grupos": "original,era5_18z,bt55",            "sinteticos": False},
-    "all":         {"grupos": "original,era5_18z,bt55",            "sinteticos": True},
-    "basin":       {"grupos": "original,era5_basin",               "sinteticos": False},
+    "original":    {"grupos": "original", "sinteticos": False},
+    "synthetic":   {"grupos": "original", "sinteticos": True},
+    "newfeatures": {"grupos": "original,era5_18z,bt55", "sinteticos": False},
+    "all":         {"grupos": "original,era5_18z,bt55", "sinteticos": True},
+    "basin":       {"grupos": "original,era5_basin", "sinteticos": False},
     "all_basin":   {"grupos": "original,era5_18z,bt55,era5_basin", "sinteticos": True},
 }
 # Como explicar cada grupo de variáveis para quem não é da área.
 NOME_GRUPO = {
-    "original": "vento, temperatura, pressão, chuva e histórico recente",
-    "era5_18z": "estado da atmosfera às 18Z (instabilidade, cisalhamento)",
-    "bt55": "nuvem fria vista por satélite (temperatura de brilho)",
-    "era5_basin": "condições agregadas de toda a bacia, não só do ponto",
+    "original": "vento, temperatura, pressão, chuva e histórico recente", "era5_18z": "estado da atmosfera às 18Z (instabilidade, cisalhamento)", "bt55": "nuvem fria vista por satélite (temperatura de brilho)", "era5_basin": "condições agregadas de toda a bacia, não só do ponto",
 }
 # Grupos que existem só em parte do território.
 GRUPOS_REGIONAIS = ("era5_18z", "bt55")
 
 NOME_METRICA = {
-    "R2": "R²",
-    "RMSE": "REQM",
-    "Bias": "Viés",
-    "Bias_P90": "Viés no extremo (P90)",
-    "RMSE_P90": "REQM no extremo (P90)",
+    "R2": "R²", "RMSE": "REQM", "Bias": "Viés", "Bias_P90": "Viés no extremo (P90)", "RMSE_P90": "REQM no extremo (P90)",
 }
 
 
@@ -111,7 +97,7 @@ def _estacoes_por_area() -> dict:
 
 @st.cache_data(show_spinner=False)
 def contagem_de_estacoes() -> dict:
-    """As três contagens de estação que os artefatos trazem — de propósito
+    """As três contagens de estação que os artefatos trazem, de propósito
     separadas, porque elas **não** são iguais.
 
     - `rede`: quantas estações o projeto cataloga (`stations_metadata.csv`);
@@ -203,7 +189,7 @@ def quadro_experimentos() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def baseline_era5() -> dict | None:
-    """Erro do ERA5 bruto — o ponto de partida que a correção tenta consertar.
+    """Erro do ERA5 bruto, o ponto de partida que a correção tenta consertar.
 
     Só os experimentos do MLP e dos modelos clássicos gravam as colunas
     `ERA5_*`; o LSTM não grava. Como o ERA5 é a entrada e não a saída de
@@ -222,8 +208,7 @@ def baseline_era5() -> dict | None:
             def med(coluna):
                 return float(np.average(df[coluna], weights=peso)) if coluna in df else None
             return {
-                "fonte": f"{pipeline}/{arm}",
-                "areas": int(len(df)),
+                "fonte": f"{pipeline}/{arm}", "areas": int(len(df)),
                 "estacoes": int(df["n_stations"].sum()),
                 "Bias_P90": med("ERA5_test_Bias_P90"),
                 "RMSE_P90": med("ERA5_test_RMSE_P90"),
@@ -274,10 +259,9 @@ def fichas_das_configuracoes() -> pd.DataFrame:
             "Configuração": NOME_ARM.get(arm, arm),
             "Variáveis": (
                 str(n_variaveis[0]) if len(set(n_variaveis)) == 1
-                else f"{min(n_variaveis)}–{max(n_variaveis)}"
+                else f"{min(n_variaveis)}-{max(n_variaveis)}"
             ),
-            "Dados sintéticos": "sim" if sinteticos else "não",
-            "Cobertura completa": all(coberturas) if coberturas else None,
+            "Dados sintéticos": "sim" if sinteticos else "não", "Cobertura completa": all(coberturas) if coberturas else None,
         })
     return pd.DataFrame(linhas)
 
@@ -294,7 +278,7 @@ def conferencia_do_desenho() -> list[dict]:
 
     `None` gravado é tratado como divergência, e não como ausência de
     informação: na pipeline, não especificar grupo nenhum significa usar
-    **todas** as variáveis disponíveis — o oposto de uma linha de base.
+    **todas** as variáveis disponíveis, o oposto de uma linha de base.
     """
     divergencias = []
     for pipeline in PIPELINES:
@@ -323,7 +307,7 @@ def bracos_gemeos() -> list[tuple[str, str, str]]:
     """Pares de braços que, na prática, viraram a mesma execução.
 
     Devolve `(abordagem, braço A, braço B)` quando os dois usaram exatamente
-    a mesma lista de variáveis e o mesmo tipo de dado de treino — situação em
+    a mesma lista de variáveis e o mesmo tipo de dado de treino, situação em
     que comparar um com o outro não responde a pergunta nenhuma.
     """
     gemeos = []
@@ -353,7 +337,7 @@ def cobertura_parcial() -> pd.DataFrame:
     Não é o mesmo que execução abortada. Alguns grupos de variáveis existem
     só em parte do território, e a pipeline tem um mecanismo documentado que
     descarta as estações sem cobertura real em vez de preencher o vazio por
-    imputação — o que produz exatamente este efeito, de propósito.
+    imputação, o que produz exatamente este efeito, de propósito.
 
     O `run_meta.json` **não registra** se esse mecanismo estava ligado, então
     a coluna "Explicação provável" descreve a hipótese, sem afirmá-la.
@@ -377,8 +361,7 @@ def cobertura_parcial() -> pd.DataFrame:
         )
 
     parciais["Explicação provável"] = parciais["arm"].map(_explica)
-    return parciais[["Abordagem", "Configuração", "areas", "estacoes",
-                     "Explicação provável"]]
+    return parciais[["Abordagem", "Configuração", "areas", "estacoes", "Explicação provável"]]
 
 
 @st.cache_data(show_spinner=False)
@@ -386,7 +369,7 @@ def estabilidade_deploy() -> pd.DataFrame:
     """R² medido em janelas mensais, e não uma vez no ano inteiro.
 
     A pipeline de modelos clássicos grava, para os melhores modelos de cada
-    área, o R² recalculado mês a mês (`R2_deploy_mean/std/min`) — que replica
+    área, o R² recalculado mês a mês (`R2_deploy_mean/std/min`), que replica
     o cenário real, em que o modelo roda sobre um mês de cada vez. Um R²
     anual único esconde o mês ruim; estas colunas o mostram.
 
@@ -422,8 +405,7 @@ def estabilidade_deploy() -> pd.DataFrame:
 
 # ── Leitura de quem venceu ────────────────────────────────────────────────────
 
-DIRECAO = {"R2": "maior", "RMSE": "menor", "Bias": "zero",
-           "Bias_P90": "zero", "RMSE_P90": "menor"}
+DIRECAO = {"R2": "maior", "RMSE": "menor", "Bias": "zero", "Bias_P90": "zero", "RMSE_P90": "menor"}
 
 
 def campeao(metrica: str, apenas_completos: bool = True) -> pd.Series | None:
@@ -529,7 +511,7 @@ def area_mais_fragil() -> dict | None:
     }
 
 
-# Linhagem de produção do estudo de interpolação — os métodos que já estavam
+# Linhagem de produção do estudo de interpolação, os métodos que já estavam
 # corrigindo o ERA5 antes deste projeto existir. Não são candidatos aqui; são
 # o ponto de partida que motivou trocar de abordagem.
 METODOS_EM_PRODUCAO = ("V2", "V3", "V4")
@@ -548,7 +530,7 @@ def baseline_interpolacao(percentil: str = "p99") -> pd.DataFrame:
 
     A régua é outra (percentil, conjunto de estações e desenho de validação
     diferem dos experimentos deste painel), então serve para enunciar o
-    problema — nunca para montar placar contra os resultados das seções 3 e 5.
+    problema, nunca para montar placar contra os resultados das seções 3 e 5.
     """
     if not REFERENCIA_INTERPOLACAO.exists():
         return pd.DataFrame()
@@ -602,14 +584,10 @@ def teto_da_interpolacao(percentil: str = "p99") -> dict | None:
 
 
 SIGLA_ARM = {
-    "original": "Base", "synthetic": "Base+S", "newfeatures": "Novas",
-    "all": "Tudo", "basin": "Bacia", "all_basin": "Tudo+B",
+    "original": "Base", "synthetic": "Base+S", "newfeatures": "Novas", "all": "Tudo", "basin": "Bacia", "all_basin": "Tudo+B",
 }
 SIGLA_GRUPO = {
-    "original": "base",
-    "era5_18z": "18Z",
-    "bt55": "satélite",
-    "era5_basin": "bacia",
+    "original": "base", "era5_18z": "18Z", "bt55": "satélite", "era5_basin": "bacia",
 }
 
 
@@ -617,7 +595,7 @@ SIGLA_GRUPO = {
 def erro_era5_por_estacao(metrica: str = "P90") -> pd.DataFrame:
     """Viés do ERA5 em cada estação: o que o ERA5 diz menos o que foi medido.
 
-    Sai com sinal, de propósito — o mapa usa escala divergente e "erra para
+    Sai com sinal, de propósito, o mapa usa escala divergente e "erra para
     menos" não pode virar a mesma cor de "erra para mais".
     """
     from engine import aggregate_station_values  # tardio: evita ciclo de import
@@ -658,28 +636,26 @@ def celulas_do_experimento() -> list[dict]:
 
     celulas = []
     for arm, ficha in DESENHO_ABLACAO.items():
-        rotulos = [SIGLA_GRUPO.get(g.strip(), g.strip()) for g in ficha["grupos"].split(",")]
+        rotulos = [SIGLA_GRUPO.get(g.strip(), g.strip()) for g in ficha["grupos"].split(", ")]
         linha = " + ".join(rotulos)
         coluna = "Com extremos inventados" if ficha["sinteticos"] else "Sem extremos inventados"
         if arm not in existentes:
             estado, detalhe = "ausente", "Combinação não executada."
         elif arm in divergentes:
             estado, detalhe = (
-                "divergente",
-                "Os grupos de variáveis gravados não batem com o desenho — "
+                "divergente", "Os grupos de variáveis gravados não batem com o desenho, "
                 "esta execução não é a linha de base que o nome promete.",
             )
         elif arm in parciais:
             estado, detalhe = (
-                "parcial",
-                "Cobriu só parte das áreas: pede variáveis que existem "
+                "parcial", "Cobriu só parte das áreas: pede variáveis que existem "
                 "apenas em parte do território.",
             )
         else:
             estado, detalhe = "ok", "Execução íntegra."
         celulas.append({
             "linha": linha, "coluna": coluna, "estado": estado,
-            "sigla": SIGLA_ARM.get(arm, arm), "detalhe": f"{NOME_ARM.get(arm, arm)} — {detalhe}",
+            "sigla": SIGLA_ARM.get(arm, arm), "detalhe": f"{NOME_ARM.get(arm, arm)}, {detalhe}",
         })
 
     # Célula vazia onde o desenho não tem par, para a grade mostrar a lacuna.
@@ -690,7 +666,58 @@ def celulas_do_experimento() -> list[dict]:
         for coluna in colunas:
             if (linha, coluna) not in presentes:
                 celulas.append({
-                    "linha": linha, "coluna": coluna, "estado": "ausente",
-                    "sigla": "—", "detalhe": "Combinação não executada.",
+                    "linha": linha, "coluna": coluna, "estado": "ausente", "sigla": "", "detalhe": "Combinação não executada.",
                 })
     return celulas
+
+
+REFERENCIA_NACIONAL = Path("dados_referencia_inmet_era5.csv")
+NIVEIS_DE_EXTREMO = {"p95": "P95", "p99": "P99", "max": "Máximo"}
+EXPLICA_NIVEL = {
+    "p95": "de cada 100 dias, os 5 de vento mais forte",
+    "p99": "de cada 100 dias, o mais ventoso",
+    "max": "a maior rajada registrada na estação em toda a série",
+}
+
+
+@st.cache_data(show_spinner=False)
+def comparacao_nacional() -> pd.DataFrame:
+    """O que cada estação do INMET mediu, contra o ponto de ERA5 mais próximo.
+
+    Cobre o país inteiro, não só a área do experimento, porque o viés do ERA5
+    não é particularidade de uma região. Uma linha por estação, com o mesmo
+    dia a dia resumido em três níveis de extremo.
+    """
+    if not REFERENCIA_NACIONAL.exists():
+        return pd.DataFrame()
+    return pd.read_csv(REFERENCIA_NACIONAL)
+
+
+@st.cache_data(show_spinner=False)
+def vies_por_nivel() -> pd.DataFrame:
+    """Para cada nível, o que o INMET mediu, o que o ERA5 estimou, e a
+    diferença entre os dois.
+
+    A diferença é subtração direta, estação por estação: valor do ERA5 menos
+    valor do INMET no mesmo nível. Negativa quer dizer que o ERA5 ficou
+    abaixo do que o instrumento registrou.
+    """
+    df = comparacao_nacional()
+    if df.empty:
+        return df
+    linhas = []
+    for chave, rotulo in NIVEIS_DE_EXTREMO.items():
+        inmet, era5 = df[f"inmet_{chave}"], df[f"era5_{chave}"]
+        diferenca = era5 - inmet
+        linhas.append({
+            "nivel": chave,
+            "Nível": rotulo,
+            "explicacao": EXPLICA_NIVEL[chave],
+            "inmet_medio": float(inmet.mean()),
+            "era5_medio": float(era5.mean()),
+            "vies_medio": float(diferenca.mean()),
+            "vies_mediano": float(diferenca.median()),
+            "frac_subestima": float((diferenca < 0).mean()),
+            "estacoes": int(len(df)),
+        })
+    return pd.DataFrame(linhas)

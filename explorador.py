@@ -1,5 +1,5 @@
 """
-Explorador — o painel de consulta técnica.
+Explorador, o painel de consulta técnica.
 
 São as quatro telas originais do dashboard, preservadas: quem é do projeto
 continua conseguindo cruzar qualquer combinação de pipeline, configuração,
@@ -7,7 +7,7 @@ cluster e trimestre. A diferença é que elas deixaram de ser a porta de
 entrada: agora vivem atrás da narrativa, para quem já sabe o que procura.
 
 O escopo global (pipelines, configurações, cluster, trimestre, estação) é lido
-de `st.session_state`, onde a barra lateral de `app.py` o escreve — antes ele
+de `st.session_state`, onde a barra lateral de `app.py` o escreve, antes ele
 vinha de variáveis de módulo compartilhadas.
 """
 
@@ -19,10 +19,10 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from engine import *  # noqa: F403 — motor completo: constantes, loaders e figuras
+from engine import *  # noqa: F403, motor completo: constantes, loaders e figuras
 # `import *` não traz nomes iniciados por underscore; estes são auxiliares do
 # motor que estas telas usam e precisam vir nomeados um a um.
-from apuracao import NOME_ARM, NOME_METRICA  # noqa: F401 — rótulos em português
+from apuracao import NOME_ARM, NOME_METRICA  # noqa: F401, rótulos em português
 from engine import (  # noqa: F401
     _ablation_aggregate,
     _ablation_select_split,
@@ -34,7 +34,7 @@ from engine import (  # noqa: F401
 )
 
 
-# NENHUMA e TODAS_AS_AREAS vêm do motor (`import *` acima) — não são
+# NENHUMA e TODAS_AS_AREAS vêm do motor (`import *` acima), não são
 # redefinidos aqui de propósito: duas cópias do mesmo sentinela foi
 # exatamente o que quebrou esta tela antes.
 
@@ -51,7 +51,7 @@ def _ajuda_das_versoes() -> str:
             if a.stem.rsplit("_", 1)[-1].isdigit()
         )
         if anos:
-            partes.append(f"{nome}: {min(anos)}–{max(anos)} ({len(anos)} anos)")
+            partes.append(f"{nome}: {min(anos)}-{max(anos)} ({len(anos)} anos)")
     return " · ".join(partes) if partes else "Sem versão publicada."
 
 
@@ -105,7 +105,7 @@ def _render_tab_global():
                 help=(
                     "O padrão mistura todas as áreas numa média ponderada, o "
                     "que pode esconder uma área que vai muito bem ou muito "
-                    "mal sozinha — escolha uma para ver o número dela."
+                    "mal sozinha. Escolha uma para ver o número dela."
                 ),
             )
 
@@ -117,7 +117,7 @@ def _render_tab_global():
         by_season = _resolve_all_season(all_results)
         if by_season.empty:
             st.info(
-                "Nenhuma combinação tem dado para este recorte — as "
+                "Nenhuma combinação tem dado para este recorte, as "
                 "abordagens não cobrem os mesmos trimestres.",
                 icon="ℹ️",
             )
@@ -169,7 +169,7 @@ def _render_tab_global():
             s for s in ("DJF", "MAM", "JJA", "SON") if s in all_results["season"].unique()
         ]
         if not _quarters_for_maps:
-            st.caption("Nenhuma abordagem sincronizou resultado por trimestre — só o agregado do ano.")
+            st.caption("Nenhuma abordagem sincronizou resultado por trimestre, só o agregado do ano.")
         else:
             # Calcula os 4 sdf's ANTES de desenhar, pra poder compartilhar a
             # mesma escala de cor (cmin/cmax) e mostrar só 1 colorbar — mesmo
@@ -200,7 +200,7 @@ def _render_tab_global():
                         f"{quarter} ({len(q_sdf)} estações)",
                         help=(
                             "A contagem é de estações com ao menos uma "
-                            "previsão válida neste trimestre — não o tamanho "
+                            "previsão válida neste trimestre, não o tamanho "
                             "da rede. Nem toda estação reporta o ano inteiro "
                             "(falha de sensor, desativação no meio do ano), "
                             "então o número muda entre DJF/MAM/JJA/SON mesmo "
@@ -232,7 +232,7 @@ def _render_tab_global():
                 pipeline_label = PIPELINE_LABELS.get(pipeline, pipeline)
                 sub = delta_df[delta_df["Pipeline"] == pipeline_label]
                 if sub.empty:
-                    card_col.metric(pipeline_label, "—")
+                    card_col.metric(pipeline_label, "sem dado")
                     continue
                 if direction == "higher":
                     best_row = sub.loc[sub[metric].idxmax()]
@@ -250,7 +250,7 @@ def _render_tab_global():
                     )
                     delta_color, delta_label = "inverse", f"Δ|{metric}|"
                 card_col.metric(
-                    f"{pipeline_label} — best: {best_row['Arm']}",
+                    f"{pipeline_label}, melhor: {NOME_ARM.get(best_row['Arm'], best_row['Arm'])}",
                     f"{best_row[metric]:.3f}",
                     delta=f"{delta_val:+.3f} {delta_label} vs. original" if delta_val == delta_val else None,
                     delta_color=delta_color,
@@ -281,7 +281,7 @@ def _render_tab_global():
             styled, width="stretch", hide_index=True, key="ablation_delta_table",
         )
 
-        with st.expander("Modelos clássicos — os 5 melhores por configuração"):
+        with st.expander("Modelos clássicos, os 5 melhores por configuração"):
             lazy_top5_df = build_lazy_top5_per_arm(ablation_combos, panel_season, panel_cluster_choice)
             st.plotly_chart(
                 build_lazy_top5_chart(lazy_top5_df),
@@ -485,7 +485,7 @@ def _render_tab_inspector():
     else:
         st.caption(
             "Comparando: " + ", ".join(c["label"] for c in selected_combos)
-            + f" — Área {global_cluster} — trimestre {global_season}"
+            + f", Área {global_cluster}, trimestre {global_season}"
         )
 
         _value_by_estacao = (
@@ -722,7 +722,7 @@ def _render_tab_grid():
 
             col_val1, col_val2 = st.columns(2)
             with col_val1:
-                st.markdown(f"**ERA5 bruto e INMET observado — {extreme_metric}**")
+                st.markdown(f"**ERA5 bruto e INMET observado, {extreme_metric}**")
                 st.plotly_chart(
                     build_interp_map(
                         _val_orig_sdf, "IDW (original)", False,
@@ -733,7 +733,7 @@ def _render_tab_grid():
                     width="stretch", key="grid_extreme_value_original",
                 )
             with col_val2:
-                st.markdown(f"**Corrigido pelos modelos — {extreme_metric}**")
+                st.markdown(f"**Corrigido pelos modelos, {extreme_metric}**")
                 st.plotly_chart(
                     build_interp_map(
                         _val_corr_sdf, "IDW (original)", False,

@@ -1,12 +1,12 @@
 """
-Painel de resultados — correção de viés de rajada de vento extremo.
+Painel de resultados, correção de viés de rajada de vento extremo.
 
 A tela é montada em quatro camadas, cada uma num arquivo:
 
-- `app.py` (aqui): a casca — configuração da página, navegação e barra lateral.
+- `app.py` (aqui): a casca, configuração da página, navegação e barra lateral.
 - `narrativa.py`: as cinco seções que contam a história, para quem chega sem
   contexto nenhum.
-- `explorador.py`: o painel de consulta técnica — as quatro telas originais,
+- `explorador.py`: o painel de consulta técnica, as quatro telas originais,
   preservadas, para quem é do projeto.
 - `engine.py` / `apuracao.py`: o motor. Carregam os artefatos, calculam as
   métricas e devolvem as figuras. Nenhum número da tela é digitado à mão.
@@ -21,10 +21,10 @@ from __future__ import annotations
 import streamlit as st
 
 # `set_page_config` tem de ser o primeiro comando Streamlit do processo, e
-# importar o motor já dispara carregamento de dado em cache — por isso a
+# importar o motor já dispara carregamento de dado em cache, por isso a
 # configuração vem antes dos imports do projeto, fora da ordem habitual.
 st.set_page_config(
-    page_title="Rajada extrema — correção de viés",
+    page_title="Rajada extrema, correção de viés",
     page_icon="🌬️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -47,12 +47,12 @@ from engine import (  # noqa: E402
 
 # Esconde o controle de atribuição (texto "© CARTO, © OpenStreetMap
 # contributors" + botão "ⓘ") que a MapLibre/Mapbox GL desenha sobre os
-# mapas — a pedido explícito, ciente de que isso normalmente vai contra os
+# mapas, a pedido explícito, ciente de que isso normalmente vai contra os
 # termos de uso desses provedores de tile gratuitos.
 st.markdown(
     """
     <style>
-    .maplibregl-ctrl-attrib, .mapboxgl-ctrl-attrib {
+    .maplibregl-ctrl-attrib.mapboxgl-ctrl-attrib {
         display: none !important;
     }
     </style>
@@ -120,7 +120,7 @@ with st.sidebar:
         st.markdown(
             "**Dados brutos e artefatos dos experimentos:** máquina 3 do "
             "cluster de pesquisa, em `/home/publico/vendaval_ai`.\n\n"
-            "**Este painel** carrega apenas resultado já calculado — nenhum "
+            "**Este painel** carrega apenas resultado já calculado, nenhum "
             "modelo é treinado aqui."
         )
         st.caption(
@@ -129,7 +129,7 @@ with st.sidebar:
             f"teste {PERIODOS['teste'][0]} a {PERIODOS['teste'][1]}."
         )
 
-    # Os controles de recorte só existem para o Explorador — não fazem sentido
+    # Os controles de recorte só existem para o Explorador, não fazem sentido
     # para quem está lendo a narrativa e atrapalhariam a leitura.
     if st.session_state["navegacao"] == "explorador":
         st.divider()
@@ -221,7 +221,7 @@ elif pagina == "explorador":
     st.divider()
     TELAS[tela]()
 
-# Navegação de rodapé — para não obrigar a voltar à barra lateral.
+# Navegação de rodapé, para não obrigar a voltar à barra lateral.
 if pagina != "hub":
     st.divider()
     indice = CHAVES.index(pagina)

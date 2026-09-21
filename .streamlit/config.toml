@@ -1,0 +1,11 @@
+# As figuras do painel têm fundo escuro próprio. O tema fica fixo aqui para
+# que o app e os gráficos não divirjam conforme o navegador de quem abre.
+[theme]
+base = "dark"
+primaryColor = "#d95926"
+backgroundColor = "#141413"
+secondaryBackgroundColor = "#1f1f1e"
+textColor = "#f2f0eb"
+
+[server]
+headless = true

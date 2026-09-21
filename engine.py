@@ -19,11 +19,17 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
 import shapely
 import streamlit as st
 import xarray as xr
 
 from theme import PIPELINE_COLORS
+
+# Sem template fixo, a figura herda o tema do Streamlit. Num tema escuro o
+# texto dos eixos sai claro, e como as figuras deste painel têm fundo claro
+# próprio, o rótulo fica ilegível. Fixar aqui vale para todo gráfico do app.
+pio.templates.default = "plotly_dark"
 
 # ── Configuração da página ────────────────────────────────────────────────────
 
@@ -68,7 +74,7 @@ ARM_LABELS = {
 }
 ABLATION_METRICS = ["R2", "RMSE", "Bias", "Bias_P90", "RMSE_P90"]
 # Sentinelas de seleção. Ficam aqui, em um lugar só, porque antes eram
-# literais repetidos em dois módulos — e uma troca de texto que pegasse
+# literais repetidos em dois módulos, e uma troca de texto que pegasse
 # apenas parte deles quebrava a tela sem erro de sintaxe.
 TODAS_AS_AREAS = "Todas as áreas (média ponderada)"
 NENHUMA = "(nenhuma)"
@@ -95,14 +101,14 @@ _MONTH_TO_SEASON = {
 # ΔE 5,3 do verde sob deuteranopia. Trocado por vermelho; o âmbar foi para o
 # amarelo canônico e o violeta cedeu lugar à magenta, para não colidir com a
 # dimensão de abordagem (PIPELINE_COLORS). Três cores ficam abaixo de 3:1 de
-# contraste — por isso todo gráfico que usa estas cores traz legenda e rótulo,
+# contraste, por isso todo gráfico que usa estas cores traz legenda e rótulo,
 # nunca cor sozinha.
 ARM_COLORS = {
-    "original": "#2a78d6", "synthetic": "#1baf7a",
-    "newfeatures": "#eda100", "all": "#e87ba4",
-    "basin": "#3d8b3d", "all_basin": "#e34948",
+    "original": "#3987e5", "synthetic": "#199e70",
+    "newfeatures": "#c98500", "all": "#d55181",
+    "basin": "#008300", "all_basin": "#e66767",
 }
-# Rótulos em português, iguais aos de `apuracao.NOME_PIPELINE` — os dois
+# Rótulos em português, iguais aos de `apuracao.NOME_PIPELINE`, os dois
 # aparecem na mesma tela e divergir confundiria o leitor.
 PIPELINE_LABELS = {
     "lazy": "Modelos clássicos",
@@ -111,7 +117,7 @@ PIPELINE_LABELS = {
 }
 # LazyPredict é a única pipeline que varia o tipo de modelo por cluster/trimestre
 # (results.csv já traz o vencedor de ~30 candidatos). MLP/LSTM usam sempre o
-# mesmo tipo de modelo — label fixa só pra manter a coluna "Model" consistente.
+# mesmo tipo de modelo, label fixa só pra manter a coluna "Model" consistente.
 MODEL_FALLBACK_LABEL = {"mlp": "MLPRegressor", "lstm": "LSTM (TF dual-head)"}
 
 def periodos_dos_experimentos() -> dict:
@@ -121,12 +127,12 @@ def periodos_dos_experimentos() -> dict:
     (`("2000-01-01", "2022-12-31")` para treino e 2023 para validação) e
     estava **errada**: os `run_meta.json` de todos os experimentos declaram
     treino 2008-2018, validação 2019 e teste 2020-2025. Número que o painel
-    mostra na tela sai do dado, nunca de constante — senão caduca em silêncio
+    mostra na tela sai do dado, nunca de constante, senão caduca em silêncio
     quando a pipeline muda o recorte.
 
     Devolve `{"treino": (ini, fim), "validacao": ..., "teste": ...,
     "divergentes": [...]}`. `divergentes` lista os experimentos cujo recorte
-    não bate com a maioria — se não estiver vazio, a tela avisa em vez de
+    não bate com a maioria, se não estiver vazio, a tela avisa em vez de
     escolher um por conta própria.
     """
     contagem: dict[str, dict[tuple, list[str]]] = {
@@ -504,7 +510,7 @@ def build_ablation_bars_by_quarter(all_results: pd.DataFrame, metric: str) -> go
         barmode="group",
         title=f"{metric} por abordagem × trimestre × configuração",
         yaxis_title=metric,
-        template="plotly_white", height=460,
+        template="plotly_dark", height=460,
         legend={"orientation": "h", "y": -0.25},
         margin={"t": 55, "b": 90},
     )
@@ -702,7 +708,7 @@ def build_best_per_cluster_bars(
     fig.update_layout(
         yaxis_title=metric,
         barmode="overlay",
-        template="plotly_white", height=480,
+        template="plotly_dark", height=480,
         legend={"orientation": "h", "y": -0.22},
         margin={"t": 20, "b": 80},
     )
@@ -801,7 +807,7 @@ def build_lazy_top5_chart(top5_df: pd.DataFrame) -> go.Figure:
         barmode="group",
         title="Modelos clássicos — os 5 melhores por configuração (por R²)",
         yaxis_title="R²",
-        template="plotly_white", height=440,
+        template="plotly_dark", height=440,
         legend={"orientation": "h", "y": -0.22},
         margin={"t": 55, "b": 80},
     )
@@ -970,7 +976,7 @@ def build_prediction_density(combos: list[dict], sel_cluster) -> go.Figure:
         barmode="overlay",
         title="Densidade de observado × previsto — combinações escolhidas",
         xaxis_title=YAXIS_WIND, yaxis_title="Densidade",
-        template="plotly_white", height=420,
+        template="plotly_dark", height=420,
         legend={"orientation": "h", "y": -0.22},
         margin={"t": 50, "b": 80},
     )
@@ -985,7 +991,7 @@ def build_residual_timeseries(estacao: str | None, mlp_preds_df: pd.DataFrame) -
     if estacao is None or mlp_preds_df.empty:
         fig.update_layout(
             title="Escolha uma estação no mapa para ver a série de resíduo",
-            template="plotly_white", height=380,
+            template="plotly_dark", height=380,
             xaxis_title="Data", yaxis_title="Resíduo (previsto − observado, m/s)",
         )
         return fig
@@ -994,7 +1000,7 @@ def build_residual_timeseries(estacao: str | None, mlp_preds_df: pd.DataFrame) -
     if df_st.empty:
         fig.update_layout(
             title=f"Sem dado da rede neural para a estação {estacao}",
-            template="plotly_white", height=380,
+            template="plotly_dark", height=380,
         )
         return fig
     residual = df_st["y_pred"] - df_st["y_true"]
@@ -1007,7 +1013,7 @@ def build_residual_timeseries(estacao: str | None, mlp_preds_df: pd.DataFrame) -
     fig.update_layout(
         title=f"Resíduo ao longo do tempo — estação {estacao}",
         xaxis_title="Data", yaxis_title="Resíduo (m/s)",
-        template="plotly_white", height=380,
+        template="plotly_dark", height=380,
         margin={"t": 50, "b": 60},
     )
     return fig
@@ -1037,7 +1043,7 @@ def build_residual_boxplot(combos: list[dict], sel_cluster) -> go.Figure:
     fig.update_layout(
         title="Distribuição do resíduo (sem data por observação)",
         yaxis_title="Resíduo (previsto − observado, m/s)",
-        template="plotly_white", height=380,
+        template="plotly_dark", height=380,
         margin={"t": 50, "b": 60},
     )
     return fig
@@ -1235,7 +1241,7 @@ def _map_theme_colors() -> dict:
         is_dark = False
     return {
         "is_dark": is_dark,
-        "map_style": "carto-darkmatter" if is_dark else "carto-positron",
+        "map_style": "carto-darkmatter" if is_dark else "carto-darkmatter",
         "halo_color": "#f2f2f2" if is_dark else "black",
         "boundary_color": "rgba(230,230,230,0.85)" if is_dark else "rgba(60,60,60,0.75)",
         "font_color": "#e6e6e6" if is_dark else "#2b2b2b",
@@ -1494,7 +1500,7 @@ def build_ablation_scatter_with_ols(
     if pred_df.empty:
         fig.update_layout(
             title="Sem previsão disponível para esta combinação",
-            template="plotly_white", height=480,
+            template="plotly_dark", height=480,
         )
         return fig
     color = ARM_COLORS.get(arm, "#898781")
@@ -1529,7 +1535,7 @@ def build_ablation_scatter_with_ols(
             f"EAM={metrics['mae']:.2f} · corr={metrics['corr']:.2f} · n={metrics['n']}</sup>"
         ),
         xaxis_title="Observado (m/s)", yaxis_title="Previsto (m/s)",
-        template="plotly_white", height=480,
+        template="plotly_dark", height=480,
         legend={"orientation": "h", "y": -0.18},
         margin={"t": 65, "l": 10, "r": 10, "b": 60},
     )
@@ -1550,7 +1556,7 @@ def build_lstm_loss_curve(histories: dict, cluster_id, season: str) -> go.Figure
     if not leaf or not leaf.get("loss"):
         fig.update_layout(
             title=f"Sem histórico de treino para a área {cluster_id} / {season}",
-            template="plotly_white", height=380,
+            template="plotly_dark", height=380,
         )
         return fig
     loss = leaf["loss"]
@@ -1558,7 +1564,7 @@ def build_lstm_loss_curve(histories: dict, cluster_id, season: str) -> go.Figure
     if all(v != v for v in loss):  # todos NaN — season sem treino válido
         fig.update_layout(
             title=f"Training history for cluster {cluster_id} / {season} is empty (NaN) — known pipeline gap",
-            template="plotly_white", height=380,
+            template="plotly_dark", height=380,
         )
         return fig
     epochs = list(range(1, len(loss) + 1))
@@ -1570,7 +1576,7 @@ def build_lstm_loss_curve(histories: dict, cluster_id, season: str) -> go.Figure
     fig.update_layout(
         title=f"Convergência do treino (LSTM) — área {cluster_id} / {season}",
         xaxis_title="Época", yaxis_title="Erro",
-        template="plotly_white", height=380,
+        template="plotly_dark", height=380,
         legend={"orientation": "h", "y": -0.2},
         margin={"t": 50, "b": 60},
     )
@@ -1592,7 +1598,7 @@ def build_importance(importance_df: pd.DataFrame, cluster_id) -> go.Figure:
     fig.update_layout(
         title=f"Importância das variáveis (MLP) — área {cluster_id}",
         xaxis_title="Queda no R² ao embaralhar a variável",
-        template="plotly_white", height=480,
+        template="plotly_dark", height=480,
         margin={"t": 50, "l": 160},
     )
     return fig
@@ -1832,7 +1838,7 @@ def build_grid_station_timeseries(
     if estacao is None or series_df.empty:
         fig.update_layout(
             title="Selecione uma estação no mapa",
-            template="plotly_white", height=380,
+            template="plotly_dark", height=380,
         )
         return fig
 
@@ -1879,7 +1885,7 @@ def build_grid_station_timeseries(
     fig.update_layout(
         title=f"Rajada máxima diária — {estacao} ({year})",
         xaxis_title="Data", yaxis_title="Rajada máxima (m/s)",
-        template="plotly_white", height=380,
+        template="plotly_dark", height=380,
         legend={"orientation": "h", "y": -0.2},
         margin={"t": 50, "b": 60},
     )
