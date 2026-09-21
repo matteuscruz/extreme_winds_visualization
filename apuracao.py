@@ -37,6 +37,28 @@ NOME_ARM = {
     "basin": "Base + bacia",
     "all_basin": "Tudo + bacia",
 }
+# O desenho do experimento, como a pipeline o declara: duas perguntas
+# cruzadas — mais variáveis × extremos sintéticos. Espelhado aqui para que a
+# tela possa CONFERIR se cada artefato publicado corresponde ao braço que diz
+# ser, em vez de confiar no nome da pasta.
+DESENHO_ABLACAO = {
+    "original":    {"grupos": "original",                          "sinteticos": False},
+    "synthetic":   {"grupos": "original",                          "sinteticos": True},
+    "newfeatures": {"grupos": "original,era5_18z,bt55",            "sinteticos": False},
+    "all":         {"grupos": "original,era5_18z,bt55",            "sinteticos": True},
+    "basin":       {"grupos": "original,era5_basin",               "sinteticos": False},
+    "all_basin":   {"grupos": "original,era5_18z,bt55,era5_basin", "sinteticos": True},
+}
+# Como explicar cada grupo de variáveis para quem não é da área.
+NOME_GRUPO = {
+    "original": "vento, temperatura, pressão, chuva e histórico recente",
+    "era5_18z": "estado da atmosfera às 18Z (instabilidade, cisalhamento)",
+    "bt55": "nuvem fria vista por satélite (temperatura de brilho)",
+    "era5_basin": "condições agregadas de toda a bacia, não só do ponto",
+}
+# Grupos que existem só em parte do território.
+GRUPOS_REGIONAIS = ("era5_18z", "bt55")
+
 NOME_METRICA = {
     "R2": "R²",
     "RMSE": "REQM",
@@ -261,45 +283,141 @@ def fichas_das_configuracoes() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def configuracoes_identicas() -> list[tuple[str, str]]:
-    """Pares de configurações cujo conjunto de variáveis é idêntico.
+def conferencia_do_desenho() -> list[dict]:
+    """Confere cada artefato publicado contra o braço que ele diz ser.
 
-    Existe porque isso foi medido no acervo atual e muda como a comparação
-    deve ser lida: duas configurações com a mesma lista de variáveis não
-    testam hipóteses diferentes.
+    Compara o campo `feature_groups` gravado em `run_meta.json` com o que
+    `DESENHO_ABLACAO` declara para aquele braço. Existe porque a comparação
+    inteira depende disso: se um braço rodou com um conjunto de variáveis
+    diferente do que seu nome promete, todo delta medido contra ele aponta
+    para a referência errada.
+
+    `None` gravado é tratado como divergência, e não como ausência de
+    informação: na pipeline, não especificar grupo nenhum significa usar
+    **todas** as variáveis disponíveis — o oposto de uma linha de base.
     """
-    assinaturas: dict[str, tuple] = {}
-    for arm in ARMS:
-        caminho = ABLATION_DIR / "mlp" / arm / "run_meta.json"
-        if not caminho.exists():
-            continue
-        meta = json.loads(caminho.read_text())
-        ativas = meta.get("active_features") or meta.get("features") or []
-        if ativas:
-            # Duas configurações só são a mesma coisa quando coincidem em
-            # variáveis E em dados de treino: 'Tudo' usa as mesmas variáveis
-            # de 'Base', mas acrescenta amostras sintéticas, então testa uma
-            # hipótese diferente e não conta como duplicata.
-            assinaturas[arm] = (frozenset(ativas), bool(meta.get("synthetic_csv")))
-    iguais = []
-    nomes = list(assinaturas)
-    for i, a in enumerate(nomes):
-        for b in nomes[i + 1:]:
-            if assinaturas[a] == assinaturas[b]:
-                iguais.append((a, b))
-    return iguais
+    divergencias = []
+    for pipeline in PIPELINES:
+        for arm, esperado in DESENHO_ABLACAO.items():
+            caminho = ABLATION_DIR / pipeline / arm / "run_meta.json"
+            if not caminho.exists():
+                continue
+            meta = json.loads(caminho.read_text())
+            gravado = meta.get("feature_groups")
+            if gravado == esperado["grupos"]:
+                continue
+            ativas = meta.get("active_features") or meta.get("features") or []
+            divergencias.append({
+                "Abordagem": NOME_PIPELINE.get(pipeline, pipeline),
+                "Configuração": NOME_ARM.get(arm, arm),
+                "arm": arm,
+                "Declarado": esperado["grupos"],
+                "Gravado": "nenhum (= todas as variáveis)" if not gravado else gravado,
+                "Variáveis usadas": len(ativas),
+            })
+    return divergencias
 
 
 @st.cache_data(show_spinner=False)
-def experimentos_incompletos() -> pd.DataFrame:
-    """Experimentos que não cobriram todas as áreas — não são comparáveis de
-    igual para igual com os demais, e a tela precisa dizer isso."""
+def bracos_gemeos() -> list[tuple[str, str, str]]:
+    """Pares de braços que, na prática, viraram a mesma execução.
+
+    Devolve `(abordagem, braço A, braço B)` quando os dois usaram exatamente
+    a mesma lista de variáveis e o mesmo tipo de dado de treino — situação em
+    que comparar um com o outro não responde a pergunta nenhuma.
+    """
+    gemeos = []
+    for pipeline in PIPELINES:
+        assinaturas: dict[str, tuple] = {}
+        for arm in ARMS:
+            caminho = ABLATION_DIR / pipeline / arm / "run_meta.json"
+            if not caminho.exists():
+                continue
+            meta = json.loads(caminho.read_text())
+            ativas = meta.get("active_features") or meta.get("features") or []
+            if ativas:
+                assinaturas[arm] = (frozenset(ativas), bool(meta.get("synthetic_csv")))
+        nomes = list(assinaturas)
+        for i, a in enumerate(nomes):
+            for b in nomes[i + 1:]:
+                if assinaturas[a] == assinaturas[b]:
+                    gemeos.append((NOME_PIPELINE.get(pipeline, pipeline),
+                                   NOME_ARM.get(a, a), NOME_ARM.get(b, b)))
+    return gemeos
+
+
+@st.cache_data(show_spinner=False)
+def cobertura_parcial() -> pd.DataFrame:
+    """Experimentos que cobriram só parte das áreas, com a leitura do porquê.
+
+    Não é o mesmo que execução abortada. Alguns grupos de variáveis existem
+    só em parte do território, e a pipeline tem um mecanismo documentado que
+    descarta as estações sem cobertura real em vez de preencher o vazio por
+    imputação — o que produz exatamente este efeito, de propósito.
+
+    O `run_meta.json` **não registra** se esse mecanismo estava ligado, então
+    a coluna "Explicação provável" descreve a hipótese, sem afirmá-la.
+    """
     quadro = quadro_experimentos()
     if quadro.empty:
         return quadro
-    return quadro[~quadro["completo"]][
-        ["Abordagem", "Configuração", "areas", "estacoes"]
-    ]
+    parciais = quadro[~quadro["completo"]].copy()
+    if parciais.empty:
+        return parciais
+
+    def _explica(arm: str) -> str:
+        grupos = DESENHO_ABLACAO.get(arm, {}).get("grupos", "")
+        regionais = [g for g in GRUPOS_REGIONAIS if g in grupos]
+        if not regionais:
+            return "Sem explicação nos metadados."
+        return (
+            "Pede variáveis que só existem em parte do território ("
+            + ", ".join(NOME_GRUPO.get(g, g) for g in regionais)
+            + ")."
+        )
+
+    parciais["Explicação provável"] = parciais["arm"].map(_explica)
+    return parciais[["Abordagem", "Configuração", "areas", "estacoes",
+                     "Explicação provável"]]
+
+
+@st.cache_data(show_spinner=False)
+def estabilidade_deploy() -> pd.DataFrame:
+    """R² medido em janelas mensais, e não uma vez no ano inteiro.
+
+    A pipeline de modelos clássicos grava, para os melhores modelos de cada
+    área, o R² recalculado mês a mês (`R2_deploy_mean/std/min`) — que replica
+    o cenário real, em que o modelo roda sobre um mês de cada vez. Um R²
+    anual único esconde o mês ruim; estas colunas o mostram.
+
+    Só existe para os modelos clássicos: é a única abordagem que grava esse
+    recorte.
+    """
+    linhas = []
+    for arm in ARMS:
+        caminho = ABLATION_DIR / "lazy" / arm / "lazy_cluster_results.csv"
+        if not caminho.exists():
+            continue
+        df = pd.read_csv(caminho)
+        if "R2_deploy_mean" not in df.columns:
+            continue
+        df = df[df["R2_deploy_mean"].notna()]
+        if df.empty:
+            continue
+        # Uma linha por área: o melhor modelo daquela área naquele braço.
+        melhores = df.sort_values("R-Squared", ascending=False).groupby("cluster_id").head(1)
+        for _, linha in melhores.iterrows():
+            linhas.append({
+                "arm": arm,
+                "Configuração": NOME_ARM.get(arm, arm),
+                "area": linha["cluster_id"],
+                "Modelo": linha["Model"],
+                "R2_anual": float(linha["R-Squared"]),
+                "R2_mes_medio": float(linha["R2_deploy_mean"]),
+                "R2_mes_desvio": float(linha["R2_deploy_std"]),
+                "R2_mes_pior": float(linha["R2_deploy_min"]),
+            })
+    return pd.DataFrame(linhas)
 
 
 # ── Leitura de quem venceu ────────────────────────────────────────────────────
@@ -361,3 +479,51 @@ def modelos_rastreados() -> int | None:
             if "Model" in df.columns:
                 return int(df["Model"].nunique())
     return None
+
+
+@st.cache_data(show_spinner=False)
+def estabilidade_por_configuracao() -> pd.DataFrame:
+    """Resumo da estabilidade de cada configuração, para comparar entre elas.
+
+    Responde uma pergunta que a visão por área não responde: as configurações
+    testadas chegam a mexer na estabilidade, ou só no acerto médio?
+    """
+    dados = estabilidade_deploy()
+    if dados.empty:
+        return dados
+    dados = dados.copy()
+    dados["queda"] = dados["R2_mes_medio"] - dados["R2_mes_pior"]
+    resumo = dados.groupby(["arm", "Configuração"], as_index=False).agg(
+        areas=("area", "nunique"),
+        mes_medio=("R2_mes_medio", "mean"),
+        pior_mes=("R2_mes_pior", "min"),
+        queda_media=("queda", "mean"),
+    )
+    return resumo.sort_values("mes_medio", ascending=False)
+
+
+@st.cache_data(show_spinner=False)
+def area_mais_fragil() -> dict | None:
+    """A área que aparece como o pior mês no maior número de configurações.
+
+    Só devolve resultado quando há repetição real: uma área que é a pior em
+    uma única configuração é ruído, não padrão.
+    """
+    dados = estabilidade_deploy()
+    if dados.empty:
+        return None
+    piores = (
+        dados.loc[dados.groupby("arm")["R2_mes_pior"].idxmin()]["area"]
+        .value_counts()
+    )
+    if piores.empty or int(piores.iloc[0]) < 2:
+        return None
+    area = piores.index[0]
+    recorte = dados[dados["area"] == area]
+    return {
+        "area": area,
+        "em_quantas": int(piores.iloc[0]),
+        "de_um_total": int(dados["arm"].nunique()),
+        "pior_mes": float(recorte["R2_mes_pior"].min()),
+        "mes_medio": float(recorte["R2_mes_medio"].mean()),
+    }

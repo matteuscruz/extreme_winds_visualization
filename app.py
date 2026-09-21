@@ -195,6 +195,8 @@ elif pagina == "resultado":
     narrativa.resultado()
 elif pagina == "prova":
     narrativa.prova()
+elif pagina == "estabilidade":
+    narrativa.estabilidade()
 elif pagina == "entrega":
     narrativa.entrega(ir_para)
 elif pagina == "explorador":

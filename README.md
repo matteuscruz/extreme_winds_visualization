@@ -30,7 +30,8 @@ abrindo com a pergunta que responde:
 | 2 · O experimento | O que foi testado — e o que significa cada configuração? |
 | 3 · O resultado | Qual combinação venceu, e em quê? |
 | 4 · A prova | A correção continua valendo em anos que o modelo nunca viu? |
-| 5 · A entrega | O que sai disso na prática? |
+| 5 · A estabilidade | O acerto se mantém mês a mês, ou só na média do ano? |
+| 6 · A entrega | O que sai disso na prática, e com que ressalva? |
 
 O **Explorador** é para quem é do projeto: as quatro telas de consulta
 originais, preservadas inteiras — comparação geral, erro no espaço e no tempo,
@@ -47,6 +48,11 @@ apuracao.py      # os números da narrativa, calculados dos artefatos
 engine.py        # motor: carga de dado, métricas e figuras
 theme.py         # tokens de cor
 ```
+
+O painel também não esconde o que o mapa corrigido custa: o modelo aprendeu
+onde há estação medindo, e levar isso a um mapa contínuo exige escolher entre
+cobertura e fidelidade. A seção 6 mostra as duas saídas possíveis e diz qual
+delas gerou as versões publicadas aqui.
 
 **Nenhum número mostrado na tela é digitado no código.** Todos são calculados
 dos artefatos no momento em que a página carrega, para que o painel não passe
@@ -79,12 +85,21 @@ código.
 
 O painel checa e avisa na tela, em vez de deixar o leitor tropeçar:
 
+- **Cada execução é conferida contra o desenho do experimento.** O painel
+  compara os grupos de variáveis registrados em `run_meta.json` com os que o
+  braço deveria usar, e avisa na tela quando não batem — inclusive quando o
+  campo vem vazio, que na pipeline significa "todas as variáveis" e não
+  "nenhuma informação". Isso importa porque toda leitura de "quanto
+  melhorou" é medida contra a linha de base: se ela não é a linha de base, o
+  ganho aponta para a referência errada.
 - **Experimentos com cobertura parcial** aparecem marcados e ficam fora dos
-  gráficos comparativos. Uma média calculada sobre menos áreas pode parecer
-  melhor só por deixar as áreas difíceis de fora.
-- **Configurações com a mesma lista de variáveis e os mesmos dados de treino**
-  são sinalizadas como duplicatas: pelo que está nos metadados, são a mesma
-  coisa com dois nomes.
+  gráficos comparativos, com a explicação provável: há grupos de variáveis
+  que existem só em parte do território. O painel declara que os metadados
+  não registram se o descarte por cobertura estava ligado, então trata isso
+  como leitura, não como afirmação.
+- **Braços que viraram execuções gêmeas** — mesma lista de variáveis e mesmo
+  tipo de dado de treino — são apontados: comparar um com o outro não
+  responde pergunta nenhuma.
 - **Divergência de recorte de tempo** entre experimentos, se houver, é
   listada antes de qualquer comparação.
 - **Contagem de estações** é mostrada separada por fonte, porque as fontes não
