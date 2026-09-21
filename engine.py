@@ -91,10 +91,16 @@ _MONTH_TO_SEASON = {
     9: "SON", 10: "SON", 11: "SON",
 }
 # Mesma paleta de scripts/_ablation_common.py no repo de pesquisa.
+# Também revalidado: o marrom (#8a5a2e) reprovava no piso de croma e ficava a
+# ΔE 5,3 do verde sob deuteranopia. Trocado por vermelho; o âmbar foi para o
+# amarelo canônico e o violeta cedeu lugar à magenta, para não colidir com a
+# dimensão de abordagem (PIPELINE_COLORS). Três cores ficam abaixo de 3:1 de
+# contraste — por isso todo gráfico que usa estas cores traz legenda e rótulo,
+# nunca cor sozinha.
 ARM_COLORS = {
     "original": "#2a78d6", "synthetic": "#1baf7a",
-    "newfeatures": "#c98a1f", "all": "#4a3aa7",
-    "basin": "#3d8b3d", "all_basin": "#8a5a2e",
+    "newfeatures": "#eda100", "all": "#e87ba4",
+    "basin": "#3d8b3d", "all_basin": "#e34948",
 }
 # Rótulos em português, iguais aos de `apuracao.NOME_PIPELINE` — os dois
 # aparecem na mesma tela e divergir confundiria o leitor.

@@ -17,10 +17,16 @@ from __future__ import annotations
 # Deliberadamente distintas das 6 cores já usadas em ARM_COLORS (app.py) para
 # não colidir visualmente quando os dois tokens aparecem na mesma tela (ex.:
 # contorno do marcador = pipeline, preenchimento = configuração).
+# Validado por medição, não por gosto: o trio anterior (#6b7280, #0f766e,
+# #7c3aed) reprovava em três checagens — o teal e o cinza-azulado ficavam a
+# ΔE 2,8 sob protanopia e a ΔE 9,3 em VISÃO NORMAL, abaixo do piso de 15,
+# e os dois não alcançavam o piso de croma (liam como cinza).
+# Este trio passa em todas: banda de luminosidade, croma, separação sob
+# daltonismo, piso de visão normal e contraste ≥ 3:1 contra a superfície.
 PIPELINE_COLORS = {
-    "lazy": "#6b7280",   # cinza-azulado
-    "mlp": "#0f766e",    # teal escuro
-    "lstm": "#7c3aed",   # roxo
+    "lazy": "#eb6834",   # laranja
+    "mlp": "#4a3aa7",    # violeta
+    "lstm": "#008300",   # verde
 }
 
 # Colorscale divergente pros mapas de DIFERENÇA (residual = candidato -

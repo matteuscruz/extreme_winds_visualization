@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import apuracao as ap
+import figuras as fg
 from theme import PIPELINE_COLORS
 
 GRAFICO = {"responsive": True}
@@ -111,121 +112,73 @@ def problema():
     st.subheader("Por que a correção que já existe não resolve o vendaval?")
 
     base = ap.baseline_era5()
-    teto = ap.teto_da_interpolacao("p99")
-
-    st.markdown(
-        "O ERA5 é a base de clima mais usada do mundo, e **subestima a "
-        "rajada forte** — justamente o caso que interessa para risco. "
-        "Comparado com o que as estações do INMET mediram, em anos que "
-        "nenhum modelo usou para treinar:"
-    )
-
     if base:
         colunas = st.columns(3)
-        colunas[0].metric(
-            "Viés na rajada extrema (P90)", _m(base["Bias_P90"], 2, " m/s"),
-            help="Média sobre os 10% de dias de vento mais forte.",
+        colunas[0].metric("Viés na rajada extrema", _m(base["Bias_P90"], 1, " m/s"),
+                          help="Percentil 90: os 10% de dias de vento mais forte.")
+        colunas[1].metric("Viés em todos os dias", _m(base["Bias"], 1, " m/s"))
+        colunas[2].metric("R²", _m(base["R2"], 2),
+                          help="Negativo: prever sempre a média erraria menos.")
+
+    erro = ap.erro_era5_por_estacao("P90")
+    if not erro.empty:
+        st.plotly_chart(
+            fg.mapa_do_erro(erro, "Quanto o ERA5 subestima a rajada extrema, por estação"),
+            width="stretch", config=GRAFICO, key="fig_erro_era5",
         )
-        colunas[1].metric(
-            "Viés em todos os dias", _m(base["Bias"], 2, " m/s"),
-            help="Média sobre todos os dias, não só os de vento forte.",
-        )
-        colunas[2].metric("R²", _m(base["R2"], 2))
         st.caption(
-            f"Calculado sobre {base['estacoes']} estações em {base['areas']} "
-            "áreas. Viés negativo = subestima."
-        )
-    else:
-        st.warning(
-            "Os artefatos sincronizados não trazem as colunas de erro do "
-            "ERA5, então esta parte não pode ser calculada.", icon="⚠️",
+            f"{len(erro)} estações. Todas negativas — o ERA5 subestima em "
+            f"toda a rede, de {abs(erro['value'].max()):.0f} a "
+            f"{abs(erro['value'].min()):.0f} m/s conforme o lugar."
         )
 
     st.divider()
-    st.markdown("#### Isso já vinha sendo corrigido — e funciona, até certo ponto")
     st.markdown(
-        "Existe um trabalho anterior, de interpolação, que corrige o ERA5 "
-        "assim: mede-se o erro em cada estação, esse campo de erros é "
-        "espalhado pelo mapa, e o resultado é somado de volta ao ERA5. "
-        "Para o dia comum, resolve."
+        "#### Isso já vinha sendo corrigido\n"
+        "Mede-se o erro em cada estação, espalha-se esse campo pelo mapa e "
+        "soma-se de volta ao ERA5. Para o dia comum, funciona."
     )
-    st.code(
-        "erro na estação  →  espalha o erro pelo mapa  →  soma de volta ao ERA5",
-        language="text",
+    st.plotly_chart(
+        fg.esquema_do_teto(), width="stretch", config=GRAFICO, key="fig_teto",
+    )
+    st.error(
+        "**O erro espalhado é uma média ponderada dos vizinhos — e média "
+        "ponderada nunca sai da faixa entre eles.** Se nenhuma estação por "
+        "perto mediu o vendaval, o mapa não tem como inventá-lo. Não é "
+        "defeito de implementação: trocar o jeito de espalhar não resolve.",
+        icon="🚨",
     )
 
-    st.markdown("#### Mas ele não consegue criar um extremo")
-    st.markdown(
-        "O erro espalhado num ponto é uma **média ponderada** dos erros das "
-        "estações vizinhas. Média ponderada fica sempre entre o menor e o "
-        "maior valor que entrou nela — nunca acima. Se nenhuma estação por "
-        "perto registrou o vendaval, o mapa não tem como inventá-lo."
-    )
-    st.info(
-        "Isso não é defeito de implementação, e trocar o jeito de espalhar "
-        "não resolve: é propriedade do mecanismo, e vale para qualquer peso "
-        "que se escolha.",
-        icon="🧭",
-    )
-
-    if teto:
-        st.error(
-            f"**Medido:** numa validação que esconde cada estação e tenta "
-            f"prevê-la a partir das outras, sobre {teto['estacoes']} "
-            f"estações, os {teto['n_metodos_producao']} métodos dessa "
-            "linhagem erram o pico anual por "
-            f"{abs(teto['melhor_vies_producao']):.1f} a "
-            f"{abs(teto['pior_vies']):.1f} m/s — todos para menos.",
-            icon="🚨",
+    teto = ap.teto_da_interpolacao("p99")
+    dados = ap.baseline_interpolacao("p99")
+    if teto and not dados.empty:
+        st.plotly_chart(
+            fg.barras_da_interpolacao(dados),
+            width="stretch", config=GRAFICO, key="fig_interpolacao",
         )
-        dados = ap.baseline_interpolacao("p99")
-        with st.expander("Ver os métodos de interpolação avaliados"):
-            st.dataframe(
-                dados[["Método", "bias", "rmse", "corr", "em_producao"]].rename(
-                    columns={"bias": "Viés", "rmse": "REQM",
-                             "corr": "Correlação", "em_producao": "Em produção"}),
-                hide_index=True, width="stretch",
-                column_config={
-                    "Em produção": st.column_config.CheckboxColumn(
-                        help="Métodos da linhagem que já corrigia o ERA5 quando este projeto começou."),
-                },
-            )
-            if teto["melhor_alternativa"]:
-                st.caption(
-                    "O mesmo estudo achou alternativas melhores dentro da "
-                    f"própria interpolação — a melhor delas, "
-                    f"“{teto['melhor_alternativa']}”, reduz o erro típico de "
-                    f"{teto['reqm_pior_producao']:.1f} para "
-                    f"{teto['reqm_melhor_alternativa']:.1f} m/s. Mesmo assim, "
-                    "todas continuam presas ao mesmo limite: nenhuma "
-                    "consegue passar do maior erro vizinho."
-                )
         st.caption(
-            "Números do estudo companheiro de interpolação, não deste "
-            "projeto. A régua é outra — percentil, conjunto de estações e "
-            "desenho de validação diferem — então servem para enunciar o "
-            "problema, nunca como placar contra os resultados das seções 3 e 5."
+            f"Validação que esconde cada estação e tenta prevê-la pelas "
+            f"outras, sobre {teto['estacoes']} estações. Os "
+            f"{teto['n_metodos_producao']} métodos em produção erram o pico "
+            f"por {abs(teto['melhor_vies_producao']):.1f} a "
+            f"{abs(teto['pior_vies']):.1f} m/s, sempre para menos. "
+            "Números do estudo companheiro de interpolação, com régua "
+            "diferente da deste painel — servem para enunciar o problema, "
+            "não como placar contra as seções 3 e 5."
         )
 
     st.divider()
-    st.markdown("#### A pergunta que este projeto faz")
     st.markdown(
-        "Um modelo que aprende a partir das **variáveis atmosféricas do "
-        "ERA5** — e não dos vizinhos — escapa desse limite? Ele enxerga "
-        "instabilidade, cisalhamento e umidade no próprio ponto, então pode "
-        "em princípio apontar um extremo que nenhuma estação próxima viu."
-    )
-    st.markdown(
-        "E há um detalhe que costuma surpreender: **o modelo não tenta "
-        "prever o vento.** Ele prevê o quanto o ERA5 errou — um fator que "
-        "depois multiplica o valor do ERA5."
+        "#### A pergunta deste projeto\n"
+        "Um modelo que aprende das **variáveis atmosféricas do próprio "
+        "ponto** — instabilidade, cisalhamento, umidade — escapa desse "
+        "limite? Ele não depende do que o vizinho mediu."
     )
     st.code("rajada corrigida  =  fator previsto  ×  rajada do ERA5", language="text")
-    st.markdown(
-        "Prever o vento do zero exigiria reaprender toda a meteorologia; "
-        "prever o quanto uma reanálise erra é um problema muito menor, e "
-        "aproveita tudo o que o ERA5 já acerta. **As próximas seções medem "
-        "se isso funcionou.**"
+    st.caption(
+        "O modelo prevê o fator de erro, não o vento. Prever vento do zero "
+        "exigiria reaprender meteorologia; prever o quanto uma reanálise "
+        "erra aproveita tudo o que o ERA5 já acerta."
     )
 
 
@@ -237,147 +190,79 @@ def experimento():
 
     from engine import PERIODOS
 
-    st.markdown(
-        "Foram cruzadas **três abordagens de modelagem** com **seis "
-        "configurações de entrada**, treinando cada combinação separadamente "
-        "em cada área. Ao todo, 18 experimentos."
-    )
-
-    colunas = st.columns(3)
-    for coluna, (chave, nome) in zip(colunas, ap.NOME_PIPELINE.items()):
-        with coluna.container(border=True):
-            st.markdown(f"**{nome}**")
-            st.caption({
-                "lazy": "Dezenas de modelos estatísticos e de árvore testados "
-                        "em série; vence o melhor de cada área.",
-                "mlp": "Uma rede neural simples, treinada com peso extra nos "
-                       "dias de vento forte.",
-                "lstm": "Uma rede que enxerga a sequência dos dias, não cada "
-                        "dia isolado.",
-            }[chave])
-
     quantos = ap.modelos_rastreados()
-    if quantos:
-        st.caption(f"O screening de modelos clássicos avaliou {quantos} tipos de modelo diferentes.")
+    colunas = st.columns(3)
+    colunas[0].metric("Abordagens de modelagem", len(ap.NOME_PIPELINE))
+    colunas[1].metric("Configurações de entrada", len(ap.DESENHO_ABLACAO))
+    colunas[2].metric("Modelos avaliados no screening", quantos or "—")
 
-    st.divider()
-    st.markdown("#### As seis configurações são duas perguntas cruzadas")
     st.markdown(
-        "Não são seis ideias soltas. São duas perguntas testadas ao mesmo "
-        "tempo: **dar mais variáveis ao modelo ajuda?** e **inventar "
-        "exemplos de vendaval que faltavam ajuda?**"
+        "As configurações não são seis ideias soltas: são **duas perguntas "
+        "cruzadas** — dar mais variáveis ao modelo ajuda, e inventar "
+        "exemplos de vendaval que faltavam ajuda?"
     )
-
-    grade = []
-    por_grupos: dict[str, dict] = {}
-    for arm, ficha in ap.DESENHO_ABLACAO.items():
-        por_grupos.setdefault(ficha["grupos"], {})[ficha["sinteticos"]] = arm
-    for grupos, colunas_por_sintetico in por_grupos.items():
-        rotulos = [
-            ap.NOME_GRUPO.get(g.strip(), g.strip())
-            for g in grupos.split(",")
-        ]
-        grade.append({
-            "O que o modelo recebe": " + ".join(rotulos),
-            "Sem extremos inventados": ap.NOME_ARM.get(
-                colunas_por_sintetico.get(False), "—"),
-            "Com extremos inventados": ap.NOME_ARM.get(
-                colunas_por_sintetico.get(True), "—"),
-        })
-    st.dataframe(pd.DataFrame(grade), hide_index=True, width="stretch")
-    if any("—" in linha.values() for linha in grade):
-        st.caption(
-            "As lacunas na tabela são reais: nem toda combinação foi "
-            "executada, então algumas comparações de par não existem."
-        )
-
-    with st.expander("De onde vêm os “extremos inventados”"):
-        st.markdown(
-            "Vendaval é raro por definição, e o modelo aprende mal aquilo que "
-            "vê pouco — o próprio projeto registra acerto alto no treino e "
-            "muito mais baixo na validação, sinal de que decorou o dia comum "
-            "em vez de aprender o dia extremo.\n\n"
-            "A resposta foi treinar uma **rede geradora** (uma GAN) só para "
-            "produzir rajadas extremas artificiais, estatisticamente "
-            "parecidas com as reais de cada área, e acrescentá-las ao treino. "
-            "As configurações da coluna da direita são as que usam esses "
-            "dados; as da esquerda, não. Comparar as duas colunas é o teste "
-            "de se a ideia funcionou."
-        )
-
-    st.caption(
-        f"Treino: {PERIODOS['treino'][0]} a {PERIODOS['treino'][1]} · "
-        f"Validação: {PERIODOS['validacao'][0]} a {PERIODOS['validacao'][1]} · "
-        f"Teste: {PERIODOS['teste'][0]} a {PERIODOS['teste'][1]}. "
-        "Lido dos metadados das execuções."
+    st.plotly_chart(
+        fg.grade_do_experimento(ap.celulas_do_experimento()),
+        width="stretch", config=GRAFICO, key="fig_grade",
     )
-
-    st.divider()
-    st.markdown("#### O que conferir antes de comparar")
 
     divergencias = ap.conferencia_do_desenho()
     if divergencias:
         afetadas = sorted({d["Configuração"] for d in divergencias})
         st.error(
-            "**A linha de base do experimento não corresponde ao que deveria "
-            f"ser.** Em {len(divergencias)} das execuções publicadas, a "
-            f"configuração “{afetadas[0]}” — que deveria usar só o conjunto "
-            "mínimo de variáveis — foi executada com variáveis a mais. "
-            "Como toda comparação “quanto melhorou?” é medida contra ela, "
-            "**esses ganhos estão medidos contra a referência errada** e o "
-            "efeito das variáveis novas não pode ser isolado com os "
-            "artefatos atuais.",
+            f"**A linha de base não é a linha de base.** Em "
+            f"{len(divergencias)} execuções, “{afetadas[0]}” rodou com mais "
+            "variáveis do que o desenho prevê. Como todo “quanto melhorou” "
+            "é medido contra ela, **esses ganhos apontam para a referência "
+            "errada** — e o efeito das variáveis novas não pode ser isolado "
+            "com estes artefatos.",
             icon="🚨",
         )
-        st.dataframe(
-            pd.DataFrame(divergencias)[
-                ["Abordagem", "Configuração", "Declarado", "Gravado", "Variáveis usadas"]
-            ],
-            hide_index=True, width="stretch",
-            column_config={
-                "Declarado": st.column_config.TextColumn(
-                    help="Grupos de variáveis que o desenho do experimento prevê para este braço."),
-                "Gravado": st.column_config.TextColumn(
-                    help="Grupos efetivamente registrados nos metadados da execução."),
-            },
-        )
-        gemeos = ap.bracos_gemeos()
-        if gemeos:
-            pares = "; ".join(f"{a}: “{b}” e “{c}”" for a, b, c in gemeos)
-            st.caption(
-                f"Consequência direta — {pares} acabaram usando exatamente a "
-                "mesma lista de variáveis e os mesmos dados de treino. "
-                "Comparar uma com a outra não responde pergunta nenhuma."
+        with st.expander("Ver a divergência execução por execução"):
+            st.dataframe(
+                pd.DataFrame(divergencias)[
+                    ["Abordagem", "Configuração", "Declarado", "Gravado", "Variáveis usadas"]],
+                hide_index=True, width="stretch",
             )
+            gemeos = ap.bracos_gemeos()
+            if gemeos:
+                st.caption(
+                    "Consequência: "
+                    + "; ".join(f"{a}: “{b}” e “{c}”" for a, b, c in gemeos)
+                    + " acabaram sendo a mesma execução."
+                )
     else:
-        st.success(
-            "Cada execução publicada corresponde ao braço que diz ser: os "
-            "grupos de variáveis registrados batem com o desenho do "
-            "experimento.",
-            icon="✅",
-        )
+        st.success("Cada execução corresponde ao braço que diz ser.", icon="✅")
 
     parciais = ap.cobertura_parcial()
     if not parciais.empty:
-        total_areas = ap.panorama()["areas"]
         st.warning(
-            f"{len(parciais)} execução(ões) cobriram só parte das "
-            f"{total_areas} áreas. **Isso não é execução interrompida** — há "
-            "variáveis que existem só em parte do território, e descartar as "
-            "estações sem medição real é mais honesto do que preencher o "
-            "vazio por imputação. Mesmo assim, uma média sobre menos áreas "
-            "não é comparável de igual para igual com uma média sobre todas.",
+            "**Cobertura parcial não é execução interrompida.** Há variáveis "
+            "que existem só em parte do território, e descartar as estações "
+            "sem medição real é mais honesto do que imputar o vazio. Ainda "
+            "assim, média sobre menos áreas não se compara de igual para "
+            "igual — por isso essas execuções ficam fora dos gráficos da "
+            "seção 3.",
             icon="⚠️",
         )
-        st.dataframe(
-            parciais.rename(columns={"areas": "Áreas cobertas", "estacoes": "Estações"}),
-            hide_index=True, width="stretch",
+
+    with st.expander("De onde vêm os “extremos inventados”"):
+        st.markdown(
+            "Vendaval é raro, e o modelo aprende mal o que vê pouco — o "
+            "projeto registra acerto alto no treino e muito mais baixo na "
+            "validação, sinal de que decorou o dia comum.\n\n"
+            "A resposta foi treinar uma **rede geradora** para produzir "
+            "rajadas extremas artificiais, parecidas com as reais de cada "
+            "área, e somá-las ao treino. A coluna da direita da grade usa "
+            "esses dados; a da esquerda, não."
         )
-        st.caption(
-            "Os metadados da execução não registram se o descarte por "
-            "cobertura estava ligado, então a explicação acima é a leitura "
-            "mais provável — não uma afirmação."
-        )
+
+    st.caption(
+        f"Treino {PERIODOS['treino'][0][:4]}–{PERIODOS['treino'][1][:4]} · "
+        f"validação {PERIODOS['validacao'][0][:4]} · "
+        f"teste {PERIODOS['teste'][0][:4]}–{PERIODOS['teste'][1][:4]}, "
+        "lido dos metadados das execuções."
+    )
 
 
 # ── 3 · O resultado ───────────────────────────────────────────────────────────
@@ -487,44 +372,31 @@ def prova():
 
     from engine import PERIODOS
 
-    treino, validacao, teste = PERIODOS["treino"], PERIODOS["validacao"], PERIODOS["teste"]
-    st.markdown(
-        "Sim — e é essa a razão de todo número deste painel vir do período de "
-        "teste, não do de treino. Os três recortes não se sobrepõem:"
+    st.plotly_chart(
+        fg.linha_do_tempo(PERIODOS), width="stretch",
+        config=GRAFICO, key="fig_linha_do_tempo",
     )
-    colunas = st.columns(3)
-    colunas[0].metric("Treino", f"{treino[0][:4]}–{treino[1][:4]}",
-                      help="Anos em que o modelo aprendeu.")
-    colunas[1].metric("Validação", f"{validacao[0][:4]}",
-                      help="Ano usado para ajustar as escolhas de modelagem.")
-    colunas[2].metric("Teste", f"{teste[0][:4]}–{teste[1][:4]}",
-                      help="Anos nunca vistos. É daqui que saem os resultados mostrados.")
 
     if PERIODOS["divergentes"]:
         st.warning(
-            "Nem todos os experimentos declaram o mesmo recorte de tempo — "
-            "veja a lista abaixo antes de comparar.", icon="⚠️",
+            "Nem todos os experimentos declaram o mesmo recorte de tempo.",
+            icon="⚠️",
         )
         for rotulo, fatia, nomes in PERIODOS["divergentes"]:
             st.caption(f"· {rotulo}: {fatia[0]} a {fatia[1]} em {', '.join(nomes)}")
     else:
         st.success(
-            f"Os {ap.panorama()['experimentos']} experimentos declaram o mesmo "
-            "recorte de tempo, então a comparação entre eles é justa.",
+            f"Os três recortes não se sobrepõem, e os "
+            f"{ap.panorama()['experimentos']} experimentos declaram o mesmo — "
+            "todo número deste painel vem do período de teste.",
             icon="✅",
         )
 
     st.divider()
-    st.markdown(
-        "**O erro muda com a estação do ano?** Só as abordagens que gravam "
-        "resultado por trimestre aparecem aqui."
-    )
     por_trimestre = _resultados_por_trimestre()
     if por_trimestre.empty:
         st.info(
-            "Nenhum experimento sincronizado grava métrica por trimestre — "
-            "esta comparação não pode ser feita com os artefatos atuais.",
-            icon="ℹ️",
+            "Nenhum experimento grava métrica por trimestre.", icon="ℹ️",
         )
         return
 
@@ -544,8 +416,8 @@ def prova():
     )
     st.plotly_chart(figura, width="stretch", config=GRAFICO, key="narrativa_trimestres")
     st.caption(
-        "DJF = verão · MAM = outono · JJA = inverno · SON = primavera "
-        "(hemisfério sul). Média das configurações que cobriram todas as áreas."
+        "DJF verão · MAM outono · JJA inverno · SON primavera (hemisfério "
+        "sul). Só as abordagens que gravam resultado por trimestre aparecem."
     )
 
 
@@ -592,9 +464,8 @@ def estabilidade():
         return
 
     st.markdown(
-        "Um acerto medido uma vez sobre o ano inteiro esconde o mês ruim. "
-        "Na operação real o modelo roda sobre **um mês de cada vez** — então "
-        "o número que importa não é a média anual, é o pior mês."
+        "Na operação o modelo roda sobre **um mês de cada vez**. O número "
+        "que importa não é a média do ano, é o pior mês."
     )
 
     opcoes = sorted(dados["arm"].unique(), key=lambda a: list(ap.NOME_ARM).index(a))
@@ -637,24 +508,14 @@ def estabilidade():
     )
     st.plotly_chart(figura, width="stretch", config=GRAFICO, key="narrativa_estabilidade")
 
-    st.warning(
-        f"**A estabilidade não é uniforme no território.** Na área "
-        f"{mais_instavel['area']} o acerto cai {queda.max():.2f} entre o mês "
-        f"médio e o pior mês; na mais estável, a queda é de "
-        f"{queda.min():.2f}. Onde a oscilação é grande, o número anual é uma "
-        "promessa que o modelo não cumpre todo mês.",
-        icon="⚖️",
-    )
-
     fragil = ap.area_mais_fragil()
     if fragil:
         st.error(
             f"**A área {fragil['area']} é o ponto fraco em "
             f"{fragil['em_quantas']} das {fragil['de_um_total']} "
-            "configurações testadas** — não é azar de uma execução. "
-            f"Lá o pior mês cai para {fragil['pior_mes']:.2f}, contra "
-            f"{fragil['mes_medio']:.2f} de média mensal. Qualquer uso do "
-            "resultado nessa região merece cautela extra.",
+            f"configurações** — não é azar de uma execução. Lá o pior mês "
+            f"cai para {fragil['pior_mes']:.2f}, contra "
+            f"{fragil['mes_medio']:.2f} de média.",
             icon="🚨",
         )
 
@@ -667,13 +528,10 @@ def estabilidade():
     if len(comparaveis) > 1:
         faixa = comparaveis["mes_medio"].max() - comparaveis["mes_medio"].min()
         st.info(
-            "**Trocar de configuração quase não mexe na estabilidade.** "
-            f"Entre a melhor e a pior das {len(comparaveis)} configurações "
-            "que cobriram todas as áreas, o acerto mensal médio varia "
-            f"{faixa:.3f}. O que separa as áreas "
-            "uma da outra é muito maior do que o que separa as "
-            "configurações — a geografia pesa mais do que a escolha de "
-            "variáveis.",
+            "**Trocar de configuração quase não mexe na estabilidade:** "
+            f"entre as {len(comparaveis)} de cobertura completa, o acerto "
+            f"mensal varia {faixa:.3f}. A geografia pesa muito mais do que "
+            "a escolha de variáveis.",
             icon="🧭",
         )
         with st.expander("Comparar as configurações entre si"):
@@ -707,12 +565,10 @@ def entrega(ir_para):
     st.header("6 · A entrega")
     st.subheader("O que sai disso na prática, e com que ressalva?")
 
-    from engine import CORRECTED_GRID_VERSIONS
-
-    st.markdown(
-        "Um **mapa de rajada corrigido**, dia a dia, cobrindo todo o "
-        "domínio — não só onde existe estação. Para cada área, o mapa usa a "
-        "combinação que venceu ali."
+    from engine import (
+        CORRECTED_GRID_VERSIONS, CORRECTED_GRID_DEFAULT_VERSION,
+        corrected_grid_date_bounds, corrected_grid_snapshot,
+        build_grid_map, stations_geo_df,
     )
 
     disponiveis = {
@@ -720,70 +576,75 @@ def entrega(ir_para):
         if caminho.exists() and any(caminho.glob("*.nc"))
     }
     if not disponiveis:
-        st.info(
-            "Nenhuma versão do mapa corrigido está publicada neste painel.",
-            icon="ℹ️",
-        )
+        st.info("Nenhuma versão do mapa corrigido está publicada.", icon="ℹ️")
         return
 
-    anos = set()
-    for caminho in disponiveis.values():
-        for arquivo in caminho.glob("grid_corrected_*.nc"):
-            sufixo = arquivo.stem.rsplit("_", 1)[-1]
-            if sufixo.isdigit():
-                anos.add(int(sufixo))
+    anos = sorted({
+        int(a.stem.rsplit("_", 1)[-1])
+        for caminho in disponiveis.values()
+        for a in caminho.glob("grid_corrected_*.nc")
+        if a.stem.rsplit("_", 1)[-1].isdigit()
+    })
     colunas = st.columns(2)
     colunas[0].metric("Versões publicadas", ", ".join(sorted(disponiveis)))
     colunas[1].metric("Anos cobertos", f"{min(anos)}–{max(anos)}" if anos else "—")
 
-    st.button(
-        "Abrir o mapa corrigido", key="ir_grid",
-        on_click=ir_para, args=("explorador",),
+    st.markdown(
+        "Um **mapa de rajada corrigido, dia a dia**, cobrindo todo o "
+        "domínio — não só onde existe estação."
     )
+
+    versao = (CORRECTED_GRID_DEFAULT_VERSION if CORRECTED_GRID_DEFAULT_VERSION
+              in disponiveis else sorted(disponiveis)[0])
+    limites = corrected_grid_date_bounds(versao)
+    if limites:
+        dia = st.select_slider(
+            "Dia mostrado", options=list(
+                pd.date_range(limites[0], limites[1], freq="30D").strftime("%Y-%m-%d")),
+            key="entrega_dia",
+        )
+        recorte = corrected_grid_snapshot(dia, versao)
+        if not recorte.empty:
+            esquerda, direita = st.columns(2)
+            with esquerda:
+                st.plotly_chart(
+                    build_grid_map(recorte, "ws_original", stations_geo_df, None,
+                                   "ERA5 original", height=380, show_colorbar=False),
+                    width="stretch", config=GRAFICO, key="fig_grid_antes",
+                )
+            with direita:
+                st.plotly_chart(
+                    build_grid_map(recorte, "rajada_max_corrigida", stations_geo_df,
+                                   None, f"Corrigido ({versao})", height=380),
+                    width="stretch", config=GRAFICO, key="fig_grid_depois",
+                )
+            st.caption(f"{dia} · mesma escala de cor nos dois mapas.")
+
+    st.button("Explorar o mapa dia a dia", key="ir_grid",
+              on_click=ir_para, args=("explorador",))
 
     st.divider()
     st.markdown("#### A ressalva que o mapa carrega")
-    st.markdown(
-        "O modelo aprendeu **onde há estação medindo**. Levar isso para um "
-        "mapa contínuo exige uma escolha, e as duas saídas possíveis têm "
-        "custo — nenhuma é de graça."
-    )
-
     esquerda, direita = st.columns(2)
     with esquerda.container(border=True):
         st.markdown("**Prever na estação e espalhar**")
         st.caption(
-            "O modelo roda onde tem estação, e o valor é interpolado para o "
-            "resto do mapa. Mantém o desempenho medido, mas a cobertura fica "
-            "presa à densidade de estações daquele dia — em anos antigos, "
-            "com pouquíssimas estações ativas, boa parte do domínio fica sem "
-            "valor."
+            "Mantém o desempenho medido, mas a cobertura fica presa à "
+            "densidade de estações do dia. É o método das versões aqui."
         )
-        st.caption("É o método das versões publicadas aqui.")
     with direita.container(border=True):
         st.markdown("**Prever direto em cada célula**")
         st.caption(
-            "O modelo é aplicado célula a célula, então todo ponto recebe "
-            "valor todo dia. O custo é que algumas variáveis do treino "
-            "dependem de haver uma estação no ponto — lags da própria "
-            "rajada observada e a mediana histórica da estação — e não "
-            "existem numa célula vazia. O projeto mediu a perda de acerto "
-            "que isso causa, e ela não é desprezível."
+            "Todo ponto recebe valor todo dia, mas algumas variáveis do "
+            "treino dependem de haver estação no ponto e faltam na célula. "
+            "O projeto mediu essa perda, e ela não é desprezível."
         )
-        st.caption("É o método de uma versão mais recente, ainda não publicada aqui.")
-
     st.info(
-        "**Por que isso está na tela:** quem usar o mapa precisa saber que "
-        "ele é uma extrapolação do que foi medido na estação, não uma "
-        "medição. O acerto mostrado nas seções 3 e 5 é o da estação — no "
-        "mapa, ele é menor.",
+        "O acerto das seções 3 e 5 é o **da estação**. No mapa ele é menor: "
+        "ali o resultado é extrapolação do que foi medido, não medição.",
         icon="🧭",
     )
-
-    st.divider()
     st.caption(
-        "**O que ainda não está aqui:** não há métrica publicada comparando "
-        "as versões do mapa entre si. Dá para ver as duas lado a lado no "
-        "Explorador, mas o painel não afirma qual é melhor, porque esse "
-        "número não foi medido."
+        "Não há métrica publicada comparando as versões do mapa entre si — "
+        "o painel não afirma qual é melhor porque esse número não foi medido."
     )

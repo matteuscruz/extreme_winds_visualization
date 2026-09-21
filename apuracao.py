@@ -557,7 +557,17 @@ def baseline_interpolacao(percentil: str = "p99") -> pd.DataFrame:
     if df.empty:
         return df
     df["em_producao"] = df["method"].str.startswith(METODOS_EM_PRODUCAO)
-    df["Método"] = df["method"].str.replace(r"\s*\(.*\)", "", regex=True)
+    # Encurta o rótulo sem fundir métodos diferentes: "MSP1 (F-madograma)"
+    # e "MSP1 (Verossimilhanca composta)" são dois métodos, e colapsar os
+    # dois em "MSP1" empilhava barras de coisas distintas na mesma linha.
+    df["Método"] = (
+        df["method"]
+        .str.replace("Verossimilhanca", "Veross.", regex=False)
+        .str.replace(r"\s*\(IDW p=2, k=15\)", "", regex=True)
+        .str.replace(r"\s*\(Gaussiano sigma=2\.0, k=15\)", "", regex=True)
+        .str.replace(r"\s*\(calibrado\)", "", regex=True)
+        .str.strip()
+    )
     return df.sort_values("bias")
 
 
@@ -589,3 +599,98 @@ def teto_da_interpolacao(percentil: str = "p99") -> dict | None:
         "reqm_melhor_alternativa": None if melhor_alt is None else float(melhor_alt["rmse"]),
         "reqm_pior_producao": float(producao["rmse"].max()),
     }
+
+
+SIGLA_ARM = {
+    "original": "Base", "synthetic": "Base+S", "newfeatures": "Novas",
+    "all": "Tudo", "basin": "Bacia", "all_basin": "Tudo+B",
+}
+SIGLA_GRUPO = {
+    "original": "base",
+    "era5_18z": "18Z",
+    "bt55": "satélite",
+    "era5_basin": "bacia",
+}
+
+
+@st.cache_data(show_spinner=False)
+def erro_era5_por_estacao(metrica: str = "P90") -> pd.DataFrame:
+    """Viés do ERA5 em cada estação: o que o ERA5 diz menos o que foi medido.
+
+    Sai com sinal, de propósito — o mapa usa escala divergente e "erra para
+    menos" não pode virar a mesma cor de "erra para mais".
+    """
+    from engine import aggregate_station_values  # tardio: evita ciclo de import
+
+    for pipeline, arm in combos_existentes():
+        caminho = ABLATION_DIR / pipeline / arm / "predictions_by_station.csv"
+        if not caminho.exists():
+            continue
+        try:
+            era5 = aggregate_station_values(str(caminho.parent), "ERA5 raw", metrica)
+            obs = aggregate_station_values(str(caminho.parent), "Observed (INMET)", metrica)
+        except Exception:
+            continue
+        if era5.empty or obs.empty:
+            continue
+        junto = era5.merge(
+            obs[["estacao", "value"]], on="estacao", suffixes=("_era5", "_obs"),
+        )
+        junto["value"] = junto["value_era5"] - junto["value_obs"]
+        return junto[["estacao", "latitude", "longitude", "cluster_id", "value"]]
+    return pd.DataFrame()
+
+
+@st.cache_data(show_spinner=False)
+def celulas_do_experimento() -> list[dict]:
+    """A matriz do experimento pronta para virar grade, uma célula por braço.
+
+    O estado de cada célula é apurado, não declarado: divergente quando os
+    grupos gravados não batem com o desenho, parcial quando a execução não
+    cobriu todas as áreas, ausente quando não há artefato.
+    """
+    quadro = quadro_experimentos()
+    divergentes = {d["arm"] for d in conferencia_do_desenho()}
+    parciais = set()
+    if not quadro.empty:
+        parciais = set(quadro[~quadro["completo"]]["arm"])
+    existentes = {arm for _, arm in combos_existentes()}
+
+    celulas = []
+    for arm, ficha in DESENHO_ABLACAO.items():
+        rotulos = [SIGLA_GRUPO.get(g.strip(), g.strip()) for g in ficha["grupos"].split(",")]
+        linha = " + ".join(rotulos)
+        coluna = "Com extremos inventados" if ficha["sinteticos"] else "Sem extremos inventados"
+        if arm not in existentes:
+            estado, detalhe = "ausente", "Combinação não executada."
+        elif arm in divergentes:
+            estado, detalhe = (
+                "divergente",
+                "Os grupos de variáveis gravados não batem com o desenho — "
+                "esta execução não é a linha de base que o nome promete.",
+            )
+        elif arm in parciais:
+            estado, detalhe = (
+                "parcial",
+                "Cobriu só parte das áreas: pede variáveis que existem "
+                "apenas em parte do território.",
+            )
+        else:
+            estado, detalhe = "ok", "Execução íntegra."
+        celulas.append({
+            "linha": linha, "coluna": coluna, "estado": estado,
+            "sigla": SIGLA_ARM.get(arm, arm), "detalhe": f"{NOME_ARM.get(arm, arm)} — {detalhe}",
+        })
+
+    # Célula vazia onde o desenho não tem par, para a grade mostrar a lacuna.
+    linhas = {c["linha"] for c in celulas}
+    colunas = {"Sem extremos inventados", "Com extremos inventados"}
+    presentes = {(c["linha"], c["coluna"]) for c in celulas}
+    for linha in linhas:
+        for coluna in colunas:
+            if (linha, coluna) not in presentes:
+                celulas.append({
+                    "linha": linha, "coluna": coluna, "estado": "ausente",
+                    "sigla": "—", "detalhe": "Combinação não executada.",
+                })
+    return celulas
