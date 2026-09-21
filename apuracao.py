@@ -527,3 +527,65 @@ def area_mais_fragil() -> dict | None:
         "pior_mes": float(recorte["R2_mes_pior"].min()),
         "mes_medio": float(recorte["R2_mes_medio"].mean()),
     }
+
+
+# Linhagem de produção do estudo de interpolação — os métodos que já estavam
+# corrigindo o ERA5 antes deste projeto existir. Não são candidatos aqui; são
+# o ponto de partida que motivou trocar de abordagem.
+METODOS_EM_PRODUCAO = ("V2", "V3", "V4")
+REFERENCIA_INTERPOLACAO = Path("dados_referencia_interpolacao.csv")
+
+
+@st.cache_data(show_spinner=False)
+def baseline_interpolacao(percentil: str = "p99") -> pd.DataFrame:
+    """Desempenho dos métodos de interpolação no extremo, por validação
+    deixa-uma-estação-de-fora.
+
+    Vem do **estudo companheiro de interpolação**, não deste projeto: é a
+    correção que já existia, e é contra a limitação dela que este trabalho
+    foi proposto. Está aqui para que a seção 1 possa mostrar o problema com
+    número medido em vez de afirmação.
+
+    A régua é outra (percentil, conjunto de estações e desenho de validação
+    diferem dos experimentos deste painel), então serve para enunciar o
+    problema — nunca para montar placar contra os resultados das seções 3 e 5.
+    """
+    if not REFERENCIA_INTERPOLACAO.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(REFERENCIA_INTERPOLACAO)
+    df = df[df["pct"] == percentil].copy()
+    if df.empty:
+        return df
+    df["em_producao"] = df["method"].str.startswith(METODOS_EM_PRODUCAO)
+    df["Método"] = df["method"].str.replace(r"\s*\(.*\)", "", regex=True)
+    return df.sort_values("bias")
+
+
+@st.cache_data(show_spinner=False)
+def teto_da_interpolacao(percentil: str = "p99") -> dict | None:
+    """Resume o que a linhagem em produção erra no extremo, e quanto a melhor
+    alternativa do mesmo estudo consegue."""
+    df = baseline_interpolacao(percentil)
+    if df.empty:
+        return None
+    producao = df[df["em_producao"]]
+    alternativas = df[~df["em_producao"]]
+    if producao.empty:
+        return None
+    # Escolhida por REQM, não por viés: viés perto de zero pode ser média de
+    # erros grandes que se cancelam, e é o erro típico que interessa aqui.
+    melhor_alt = (
+        alternativas.loc[alternativas["rmse"].idxmin()]
+        if not alternativas.empty else None
+    )
+    return {
+        "percentil": percentil,
+        "n_metodos_producao": int(len(producao)),
+        "pior_vies": float(producao["bias"].min()),
+        "melhor_vies_producao": float(producao["bias"].max()),
+        "estacoes": int(producao["n"].iloc[0]),
+        "melhor_alternativa": None if melhor_alt is None else melhor_alt["Método"],
+        "vies_melhor_alternativa": None if melhor_alt is None else float(melhor_alt["bias"]),
+        "reqm_melhor_alternativa": None if melhor_alt is None else float(melhor_alt["rmse"]),
+        "reqm_pior_producao": float(producao["rmse"].max()),
+    }

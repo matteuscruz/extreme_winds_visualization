@@ -23,7 +23,7 @@ GRAFICO = {"responsive": True}
 # Cada seção: chave de navegação, título e a pergunta que ela responde.
 SECOES = [
     ("problema", "1 · O problema",
-     "Por que a rajada de vento do ERA5 não serve como está?"),
+     "Por que a correção que já existe não resolve o vendaval?"),
     ("experimento", "2 · O experimento",
      "O que foi testado — e o que significa cada configuração?"),
     ("resultado", "3 · O resultado",
@@ -47,19 +47,21 @@ def _m(valor, casas=2, sufixo=""):
 # ── Hub de entrada ────────────────────────────────────────────────────────────
 
 def hub(ir_para):
-    st.title("Rajada de vento extremo: corrigindo o erro do ERA5")
+    st.title("Vendaval: a IA captura o extremo que a interpolação não captura?")
     st.markdown(
-        "O ERA5 é a base de dados de clima mais usada do mundo, mas **erra "
-        "muito a rajada de vento forte** — justamente o caso que interessa "
-        "para risco. Este projeto treina modelos para corrigir esse erro no "
-        "Sul do Brasil, usando as estações do INMET como verdade."
+        "O ERA5 é a base de clima mais usada do mundo e **subestima a rajada "
+        "forte**. Já existe uma correção para isso, por interpolação — mas "
+        "ela não consegue produzir um extremo que as estações vizinhas não "
+        "registraram. Este projeto testa se modelos treinados nas variáveis "
+        "atmosféricas do ERA5 passam desse limite, no Sul do Brasil."
     )
 
     st.info(
-        "**O que este painel cobre:** o experimento de correção de viés e o "
-        "mapa corrigido que ele produz. **O que não cobre:** a coleta e o "
-        "pré-processamento do ERA5 e do INMET, que acontecem antes, fora "
-        "deste painel.",
+        "**O que este painel cobre:** o experimento de modelagem e o mapa "
+        "corrigido que ele produz. **O que não cobre:** o estudo de "
+        "interpolação em si, que é trabalho separado e aparece aqui só para "
+        "enunciar o problema — e a coleta e o preparo do ERA5 e do INMET, "
+        "que acontecem antes.",
         icon="🧭",
     )
 
@@ -106,63 +108,124 @@ def hub(ir_para):
 
 def problema():
     st.header("1 · O problema")
-    st.subheader("Por que a rajada de vento do ERA5 não serve como está?")
+    st.subheader("Por que a correção que já existe não resolve o vendaval?")
 
     base = ap.baseline_era5()
-    if not base:
-        st.warning(
-            "Os artefatos sincronizados não trazem as colunas de erro do ERA5, "
-            "então esta seção não tem como ser calculada.", icon="⚠️",
+    teto = ap.teto_da_interpolacao("p99")
+
+    st.markdown(
+        "O ERA5 é a base de clima mais usada do mundo, e **subestima a "
+        "rajada forte** — justamente o caso que interessa para risco. "
+        "Comparado com o que as estações do INMET mediram, em anos que "
+        "nenhum modelo usou para treinar:"
+    )
+
+    if base:
+        colunas = st.columns(3)
+        colunas[0].metric(
+            "Viés na rajada extrema (P90)", _m(base["Bias_P90"], 2, " m/s"),
+            help="Média sobre os 10% de dias de vento mais forte.",
         )
-        return
-
-    st.markdown(
-        "Comparando o ERA5 com o que as estações do INMET mediram de verdade, "
-        "nos anos que nenhum modelo usou para treinar:"
-    )
-
-    colunas = st.columns(3)
-    colunas[0].metric(
-        "Viés na rajada extrema (P90)", _m(base["Bias_P90"], 2, " m/s"),
-        help="Média sobre os 10% de dias de vento mais forte.",
-    )
-    colunas[1].metric(
-        "Viés em todos os dias", _m(base["Bias"], 2, " m/s"),
-        help="Média sobre todos os dias, não só os de vento forte.",
-    )
-    colunas[2].metric("R²", _m(base["R2"], 2))
-
-    st.error(
-        f"**O ERA5 subestima a rajada extrema em {abs(base['Bias_P90']):.1f} m/s "
-        f"em média** — e seu R² de {base['R2']:.2f} é negativo, ou seja, prever "
-        "sempre a média das observações erraria menos do que usar o ERA5.",
-        icon="🚨",
-    )
-
-    st.markdown(
-        "O erro não é uniforme no território. Por área, ele vai de "
-        f"**{abs(base['melhor_area_Bias_P90']):.1f}** a "
-        f"**{abs(base['pior_area_Bias_P90']):.1f} m/s** de subestimação — "
-        "é por isso que o projeto corrige área por área, e não com um fator único."
-    )
-
-    st.caption(
-        f"Calculado sobre {base['estacoes']} estações em {base['areas']} áreas. "
-        "P90 = os 10% de dias de vento mais forte."
-    )
+        colunas[1].metric(
+            "Viés em todos os dias", _m(base["Bias"], 2, " m/s"),
+            help="Média sobre todos os dias, não só os de vento forte.",
+        )
+        colunas[2].metric("R²", _m(base["R2"], 2))
+        st.caption(
+            f"Calculado sobre {base['estacoes']} estações em {base['areas']} "
+            "áreas. Viés negativo = subestima."
+        )
+    else:
+        st.warning(
+            "Os artefatos sincronizados não trazem as colunas de erro do "
+            "ERA5, então esta parte não pode ser calculada.", icon="⚠️",
+        )
 
     st.divider()
-    st.markdown("#### Como o erro é corrigido")
+    st.markdown("#### Isso já vinha sendo corrigido — e funciona, até certo ponto")
     st.markdown(
-        "O ponto que costuma surpreender: **o modelo não tenta prever o "
-        "vento.** Ele prevê o quanto o ERA5 errou — um fator de correção que "
+        "Existe um trabalho anterior, de interpolação, que corrige o ERA5 "
+        "assim: mede-se o erro em cada estação, esse campo de erros é "
+        "espalhado pelo mapa, e o resultado é somado de volta ao ERA5. "
+        "Para o dia comum, resolve."
+    )
+    st.code(
+        "erro na estação  →  espalha o erro pelo mapa  →  soma de volta ao ERA5",
+        language="text",
+    )
+
+    st.markdown("#### Mas ele não consegue criar um extremo")
+    st.markdown(
+        "O erro espalhado num ponto é uma **média ponderada** dos erros das "
+        "estações vizinhas. Média ponderada fica sempre entre o menor e o "
+        "maior valor que entrou nela — nunca acima. Se nenhuma estação por "
+        "perto registrou o vendaval, o mapa não tem como inventá-lo."
+    )
+    st.info(
+        "Isso não é defeito de implementação, e trocar o jeito de espalhar "
+        "não resolve: é propriedade do mecanismo, e vale para qualquer peso "
+        "que se escolha.",
+        icon="🧭",
+    )
+
+    if teto:
+        st.error(
+            f"**Medido:** numa validação que esconde cada estação e tenta "
+            f"prevê-la a partir das outras, sobre {teto['estacoes']} "
+            f"estações, os {teto['n_metodos_producao']} métodos dessa "
+            "linhagem erram o pico anual por "
+            f"{abs(teto['melhor_vies_producao']):.1f} a "
+            f"{abs(teto['pior_vies']):.1f} m/s — todos para menos.",
+            icon="🚨",
+        )
+        dados = ap.baseline_interpolacao("p99")
+        with st.expander("Ver os métodos de interpolação avaliados"):
+            st.dataframe(
+                dados[["Método", "bias", "rmse", "corr", "em_producao"]].rename(
+                    columns={"bias": "Viés", "rmse": "REQM",
+                             "corr": "Correlação", "em_producao": "Em produção"}),
+                hide_index=True, width="stretch",
+                column_config={
+                    "Em produção": st.column_config.CheckboxColumn(
+                        help="Métodos da linhagem que já corrigia o ERA5 quando este projeto começou."),
+                },
+            )
+            if teto["melhor_alternativa"]:
+                st.caption(
+                    "O mesmo estudo achou alternativas melhores dentro da "
+                    f"própria interpolação — a melhor delas, "
+                    f"“{teto['melhor_alternativa']}”, reduz o erro típico de "
+                    f"{teto['reqm_pior_producao']:.1f} para "
+                    f"{teto['reqm_melhor_alternativa']:.1f} m/s. Mesmo assim, "
+                    "todas continuam presas ao mesmo limite: nenhuma "
+                    "consegue passar do maior erro vizinho."
+                )
+        st.caption(
+            "Números do estudo companheiro de interpolação, não deste "
+            "projeto. A régua é outra — percentil, conjunto de estações e "
+            "desenho de validação diferem — então servem para enunciar o "
+            "problema, nunca como placar contra os resultados das seções 3 e 5."
+        )
+
+    st.divider()
+    st.markdown("#### A pergunta que este projeto faz")
+    st.markdown(
+        "Um modelo que aprende a partir das **variáveis atmosféricas do "
+        "ERA5** — e não dos vizinhos — escapa desse limite? Ele enxerga "
+        "instabilidade, cisalhamento e umidade no próprio ponto, então pode "
+        "em princípio apontar um extremo que nenhuma estação próxima viu."
+    )
+    st.markdown(
+        "E há um detalhe que costuma surpreender: **o modelo não tenta "
+        "prever o vento.** Ele prevê o quanto o ERA5 errou — um fator que "
         "depois multiplica o valor do ERA5."
     )
     st.code("rajada corrigida  =  fator previsto  ×  rajada do ERA5", language="text")
     st.markdown(
-        "A diferença é prática. Prever o vento do zero exigiria reaprender "
-        "toda a meteorologia; prever o quanto uma reanálise erra é um "
-        "problema muito menor, e aproveita tudo o que o ERA5 já acerta."
+        "Prever o vento do zero exigiria reaprender toda a meteorologia; "
+        "prever o quanto uma reanálise erra é um problema muito menor, e "
+        "aproveita tudo o que o ERA5 já acerta. **As próximas seções medem "
+        "se isso funcionou.**"
     )
 
 
