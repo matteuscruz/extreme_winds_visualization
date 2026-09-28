@@ -484,33 +484,6 @@ def estabilidade_por_configuracao() -> pd.DataFrame:
     return resumo.sort_values("mes_medio", ascending=False)
 
 
-@st.cache_data(show_spinner=False)
-def area_mais_fragil() -> dict | None:
-    """A área que aparece como o pior mês no maior número de configurações.
-
-    Só devolve resultado quando há repetição real: uma área que é a pior em
-    uma única configuração é ruído, não padrão.
-    """
-    dados = estabilidade_deploy()
-    if dados.empty:
-        return None
-    piores = (
-        dados.loc[dados.groupby("arm")["R2_mes_pior"].idxmin()]["area"]
-        .value_counts()
-    )
-    if piores.empty or int(piores.iloc[0]) < 2:
-        return None
-    area = piores.index[0]
-    recorte = dados[dados["area"] == area]
-    return {
-        "area": area,
-        "em_quantas": int(piores.iloc[0]),
-        "de_um_total": int(dados["arm"].nunique()),
-        "pior_mes": float(recorte["R2_mes_pior"].min()),
-        "mes_medio": float(recorte["R2_mes_medio"].mean()),
-    }
-
-
 # Linhagem de produção do estudo de interpolação, os métodos que já estavam
 # corrigindo o ERA5 antes deste projeto existir. Não são candidatos aqui; são
 # o ponto de partida que motivou trocar de abordagem.
@@ -619,6 +592,122 @@ def erro_era5_por_estacao(metrica: str = "P90") -> pd.DataFrame:
     return pd.DataFrame()
 
 
+REFERENCIA_V5 = Path("dados_referencia_v5_2020_2025.csv")
+REFERENCIA_V5_MAXIMO = Path("dados_referencia_v5_maximo_2020_2025.csv")
+# Cada nível: (nome do nível em aggregate_station_values, sufixo da coluna
+# no CSV da V5). "Máximo" tem CSV e sufixo próprios porque veio de um
+# recálculo separado do V5, feito depois do P90/P95/P99.
+NIVEIS_EXTREMOS = (
+    ("P90", "P90", "p90"), ("P95", "P95", "p95"), ("P99", "P99", "p99"),
+    ("Máximo", "Historical max", "maximo"),
+)
+
+
+@st.cache_data(show_spinner=False)
+def extremos_corrigidos() -> pd.DataFrame:
+    """Observado (INMET), saída corrigida e V5 (Kriging Ordinário), em P90/P95/P99/Máximo.
+
+    Usa a configuração campeã em Bias_P90 (a mesma que a Seção 3 aponta como
+    melhor no extremo, único número validado pela própria pipeline) — não
+    inventa uma configuração nova só para este recorte. Os níveis aqui são o
+    valor de cada percentil, mesma leitura de `vies_por_nivel` (Seção 1):
+    não é o "Bias_P90" da pipeline, que é o erro médio só nos dias que
+    passam do limiar. Calculados do zero porque `results.parquet` só publica
+    P90 — os demais não existem prontos em lugar nenhum do artefato.
+
+    A V5 é a réplica restrita ao domínio e ao período de teste do Vendaval
+    AI (LOOCV genuíno, sem o vazamento espacial da V5 de produção), recém
+    recalculada com o período real (2020-2025, não o 2023-2024 antigo do
+    script original) e só nas estações que o campeão também usa — mesmo
+    conjunto dos dois lados, senão a diferença mediria a rede, não o método.
+    """
+    from engine import aggregate_station_values
+
+    melhor = campeao("Bias_P90")
+    if melhor is None:
+        return pd.DataFrame()
+    combo_dir = ABLATION_DIR / melhor["pipeline"] / melhor["arm"]
+    if not (combo_dir / "predictions_by_station.csv").exists():
+        return pd.DataFrame()
+
+    v5 = pd.read_csv(REFERENCIA_V5) if REFERENCIA_V5.exists() else pd.DataFrame()
+    v5_max = pd.read_csv(REFERENCIA_V5_MAXIMO) if REFERENCIA_V5_MAXIMO.exists() else pd.DataFrame()
+
+    linhas = []
+    for rotulo, chave_metrica, sufixo in NIVEIS_EXTREMOS:
+        obs = aggregate_station_values(str(combo_dir), "Observed (INMET)", chave_metrica)
+        cor = aggregate_station_values(str(combo_dir), "Predicted", chave_metrica)
+        if obs.empty or cor.empty:
+            continue
+        junto = obs.merge(cor[["estacao", "value"]], on="estacao", suffixes=("_obs", "_cor"))
+        linha = {
+            "nivel": rotulo, "Nível": rotulo,
+            "inmet_medio": float(junto["value_obs"].mean()),
+            "corrigido_medio": float(junto["value_cor"].mean()),
+            "vies_medio": float((junto["value_cor"] - junto["value_obs"]).mean()),
+            "estacoes": int(len(junto)),
+        }
+        fonte_v5 = v5_max if rotulo == "Máximo" else v5
+        col_v5 = f"v5_{sufixo}"
+        col_obs_v5 = f"obs_{sufixo}"
+        if not fonte_v5.empty and col_v5 in fonte_v5.columns:
+            v5_recorte = fonte_v5[fonte_v5["codigo_estacao"].isin(junto["estacao"])]
+            if not v5_recorte.empty:
+                linha["v5_medio"] = float(v5_recorte[col_v5].mean())
+                linha["vies_v5_medio"] = float(
+                    (v5_recorte[col_v5] - v5_recorte[col_obs_v5]).mean()
+                )
+                linha["estacoes_v5"] = int(len(v5_recorte))
+        linhas.append(linha)
+    df = pd.DataFrame(linhas)
+    if not df.empty:
+        df.attrs["abordagem"] = melhor["Abordagem"]
+        df.attrs["configuracao"] = melhor["Configuração"]
+    return df
+
+
+@st.cache_data(show_spinner=False)
+def extremos_por_estacao(nivel: str) -> pd.DataFrame:
+    """INMET, Vendaval IA e V5 por estação, num nível (P90/P95/P99/Máximo).
+
+    Mesma configuração campeã e mesmo recorte de estações de
+    `extremos_corrigidos` — serve o mapa de estações da Seção 6, essa serve
+    a tabela/gráfico. `nivel` é um dos rótulos de `NIVEIS_EXTREMOS`.
+    """
+    from engine import aggregate_station_values
+
+    combos = {r: (m, s) for r, m, s in NIVEIS_EXTREMOS}
+    if nivel not in combos:
+        return pd.DataFrame()
+    chave_metrica, sufixo = combos[nivel]
+
+    melhor = campeao("Bias_P90")
+    if melhor is None:
+        return pd.DataFrame()
+    combo_dir = ABLATION_DIR / melhor["pipeline"] / melhor["arm"]
+    if not (combo_dir / "predictions_by_station.csv").exists():
+        return pd.DataFrame()
+
+    obs = aggregate_station_values(str(combo_dir), "Observed (INMET)", chave_metrica)
+    cor = aggregate_station_values(str(combo_dir), "Predicted", chave_metrica)
+    if obs.empty or cor.empty:
+        return pd.DataFrame()
+    junto = obs.merge(
+        cor[["estacao", "value"]], on="estacao", suffixes=("_obs", "_cor"),
+    ).rename(columns={"value_obs": "inmet", "value_cor": "corrigido"})
+
+    fonte_v5 = REFERENCIA_V5_MAXIMO if nivel == "Máximo" else REFERENCIA_V5
+    v5 = pd.read_csv(fonte_v5) if fonte_v5.exists() else pd.DataFrame()
+    if not v5.empty and f"v5_{sufixo}" in v5.columns:
+        junto = junto.merge(
+            v5[["codigo_estacao", f"v5_{sufixo}"]].rename(
+                columns={"codigo_estacao": "estacao", f"v5_{sufixo}": "v5"}),
+            on="estacao", how="left",
+        )
+    return junto[["estacao", "latitude", "longitude", "inmet", "corrigido"]
+                 + (["v5"] if "v5" in junto.columns else [])]
+
+
 @st.cache_data(show_spinner=False)
 def celulas_do_experimento() -> list[dict]:
     """A matriz do experimento pronta para virar grade, uma célula por braço.
@@ -636,7 +725,7 @@ def celulas_do_experimento() -> list[dict]:
 
     celulas = []
     for arm, ficha in DESENHO_ABLACAO.items():
-        rotulos = [SIGLA_GRUPO.get(g.strip(), g.strip()) for g in ficha["grupos"].split(", ")]
+        rotulos = [SIGLA_GRUPO.get(g.strip(), g.strip()) for g in ficha["grupos"].split(",")]
         linha = " + ".join(rotulos)
         coluna = "Com extremos inventados" if ficha["sinteticos"] else "Sem extremos inventados"
         if arm not in existentes:

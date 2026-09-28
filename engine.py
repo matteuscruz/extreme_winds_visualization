@@ -1665,6 +1665,33 @@ def corrected_grid_snapshot(date_str: str, version: str) -> pd.DataFrame:
     return df.dropna()
 
 
+_GRID_QUANTIL = {"P90": 0.90, "P95": 0.95, "P99": 0.99}
+
+
+@st.cache_data
+def corrected_grid_percentil(version: str, nivel: str) -> pd.DataFrame:
+    """Achata o grid inteiro (todos os anos publicados) num só nível —
+    P90/P95/P99/Máximo calculado célula a célula ao longo do tempo, mesmo
+    formato long-form de `corrected_grid_snapshot`, pra reusar `build_grid_map`.
+    Grid é pequeno (~16 MB/ano), carregar tudo e reduzir no tempo é barato."""
+    cols = ["longitude", "latitude", "ws_original", "rajada_max_corrigida"]
+    ds = load_corrected_grid(version)
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    if nivel == "Máximo":
+        reduzido = ds.max(dim="time", skipna=True)
+    else:
+        reduzido = ds.quantile(_GRID_QUANTIL[nivel], dim="time", skipna=True)
+    lon2d, lat2d = np.meshgrid(reduzido.longitude.values, reduzido.latitude.values)
+    df = pd.DataFrame({
+        "longitude": lon2d.ravel(),
+        "latitude": lat2d.ravel(),
+        "ws_original": np.asarray(reduzido["ws_original"].values).ravel(),
+        "rajada_max_corrigida": np.asarray(reduzido["rajada_max_corrigida"].values).ravel(),
+    })
+    return df.dropna()
+
+
 @st.cache_data
 def corrected_grid_station_series(lat: float, lon: float, version: str) -> pd.DataFrame:
     """Série temporal (original/corrigido) no PIXEL do grid mais próximo de

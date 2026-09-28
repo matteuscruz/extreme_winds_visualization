@@ -55,6 +55,24 @@ st.markdown(
     .maplibregl-ctrl-attrib.mapboxgl-ctrl-attrib {
         display: none !important;
     }
+    /* O texto dos avisos (st.error/warning/info/success) usa a cor do tipo
+    em opacidade baixa sobre o fundo escuro, o que dá contraste insuficiente
+    (vermelho sobre marrom escuro, por exemplo). O fundo colorido continua
+    marcando a severidade; o texto vira a cor de tinta do tema, sempre legível. */
+    [data-testid^="stAlertContent"] [data-testid="stMarkdownContainer"],
+    [data-testid^="stAlertContent"] [data-testid="stMarkdownContainer"] * {
+        color: #f2f0eb !important;
+    }
+    /* Texto geral pequeno demais pra quem olha de longe ou numa tela menor.
+    Aumenta o corpo do texto (parágrafo, legenda, aviso, métrica) sem mexer
+    em título nem em botão, que já tinham tamanho adequado. */
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stMetricValue"],
+    [data-testid="stMetricLabel"],
+    [data-testid^="stAlertContent"] {
+        font-size: 1.15rem !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
