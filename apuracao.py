@@ -464,6 +464,35 @@ def modelos_rastreados() -> int | None:
 
 
 @st.cache_data(show_spinner=False)
+def arms_com_screening() -> list[str]:
+    return [a for a in ARMS if (ABLATION_DIR / "lazy" / a / "lazy_cluster_results.csv").exists()]
+
+
+@st.cache_data(show_spinner=False)
+def areas_com_screening(arm: str) -> list[int]:
+    caminho = ABLATION_DIR / "lazy" / arm / "lazy_cluster_results.csv"
+    if not caminho.exists():
+        return []
+    return sorted(int(c) for c in pd.read_csv(caminho)["cluster_id"].unique())
+
+
+@st.cache_data(show_spinner=False)
+def leaderboard_classicos(arm: str, area: int) -> pd.DataFrame:
+    """Todas as técnicas que o screening testou numa área, do maior R² para o
+    menor, um registro por técnica."""
+    caminho = ABLATION_DIR / "lazy" / arm / "lazy_cluster_results.csv"
+    if not caminho.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(caminho)
+    df = df[df["cluster_id"] == area]
+    if df.empty:
+        return pd.DataFrame()
+    df = df.sort_values("R-Squared", ascending=False).drop_duplicates("Model")
+    return df[["Model", "R-Squared", "RMSE"]].rename(
+        columns={"Model": "Modelo", "R-Squared": "R²", "RMSE": "REQM"})
+
+
+@st.cache_data(show_spinner=False)
 def estabilidade_por_configuracao() -> pd.DataFrame:
     """Resumo da estabilidade de cada configuração, para comparar entre elas.
 
