@@ -76,12 +76,24 @@ def hub(ir_para):
         delta_color="inverse",
         help="Melhor resultado entre os experimentos que cobriram todas as áreas.",
     )
-    if contagem["faixa_usada"]:
-        menor, maior = contagem["faixa_usada"]
-        st.caption(
-            f"A rede tem {p['estacoes']} estações catalogadas; cada experimento "
-            f"usou entre {menor} e {maior}, porque nem toda estação tem série "
-            "utilizável no período."
+    from engine import PERIODOS
+
+    def _faixa(par):
+        return f"{par[0][:4]}-{par[1][:4]}" if par else SEM_DADO
+
+    val = PERIODOS["validacao"][0][:4] if PERIODOS["validacao"] else SEM_DADO
+    faixa = contagem["faixa_usada"]
+    usadas = f"; {faixa[0]} a {faixa[1]} com série utilizável" if faixa else ""
+    with st.container(border=True):
+        st.markdown("**Os dados por trás dos resultados**")
+        campos = st.columns(3)
+        campos[0].markdown(f"**Região**  \nSul do Brasil, {p['areas'] or SEM_DADO} áreas")
+        campos[1].markdown(
+            f"**Período**  \nTreino {_faixa(PERIODOS['treino'])}, validação {val}, "
+            f"teste {_faixa(PERIODOS['teste'])}"
+        )
+        campos[2].markdown(
+            f"**Estações**  \n{p['estacoes'] or SEM_DADO} catalogadas do INMET{usadas}"
         )
 
     st.divider()
@@ -252,6 +264,47 @@ def experimento():
         "uma rede neural com memória entre instantes de tempo, pensada para "
         "dado que evolui, não só uma foto isolada da atmosfera."
     )
+
+    st.markdown("**As técnicas clássicas, uma a uma**")
+    st.caption(
+        "Os modelos clássicos não são um único algoritmo. Em cada área, o "
+        "screening treina dezenas de técnicas tradicionais e fica com a de "
+        "maior R². A tabela mostra o ranking completo da combinação escolhida."
+    )
+    arms_lb = ap.arms_com_screening()
+    if arms_lb:
+        col_cfg, col_area = st.columns(2)
+        arm_sel = col_cfg.selectbox(
+            "Configuração", arms_lb,
+            format_func=lambda a: ap.NOME_ARM.get(a, a), key="lb_arm",
+        )
+        area_sel = col_area.selectbox("Área", ap.areas_com_screening(arm_sel), key="lb_area")
+        lb = ap.leaderboard_classicos(arm_sel, area_sel)
+        if lb.empty:
+            st.info("Sem screening gravado para esta combinação.")
+        else:
+            lb = lb.copy()
+            lb.insert(0, "Posição", range(1, len(lb) + 1))
+            topo = lb.iloc[0]
+            st.success(
+                f"Melhor técnica nesta área: {topo['Modelo']}. Explica "
+                f"{topo['R²']:.0%} da variação da rajada (R² {topo['R²']:.2f}) e "
+                f"erra em média {topo['REQM']:.2f} m/s. Entre {len(lb)} técnicas "
+                "testadas, a pipeline fica com a de maior R²."
+            )
+            st.dataframe(
+                lb, hide_index=True, width="stretch",
+                column_config={
+                    "Posição": st.column_config.NumberColumn(width="small"),
+                    "Modelo": st.column_config.TextColumn("Técnica"),
+                    "R²": st.column_config.NumberColumn(
+                        "R² (0 a 1)", format="%.2f",
+                        help="Quanto da variação da rajada a técnica explica. Mais perto de 1 é melhor."),
+                    "REQM": st.column_config.NumberColumn(
+                        "Erro típico (m/s)", format="%.2f",
+                        help="Distância média entre a previsão e o observado. Menor é melhor."),
+                },
+            )
 
     st.markdown(
         "As configurações não são seis ideias soltas: são **duas perguntas "
