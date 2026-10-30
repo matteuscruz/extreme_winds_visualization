@@ -16,18 +16,28 @@ import streamlit as st
 
 import apuracao as ap
 import figuras as fg
+import grade_v12
 from theme import PIPELINE_COLORS
 
 GRAFICO = {"responsive": True}
 
 # Cada seção: chave de navegação, título e a pergunta que ela responde.
 SECOES = [
-    ("problema", "1 · O problema", "Por que a correção que já existe não resolve o vendaval?"),
-    ("experimento", "2 · O experimento", "O que foi testado, e o que significa cada configuração?"),
-    ("resultado", "3 · O resultado", "Qual combinação venceu, e em quê?"),
-    ("prova", "4 · A prova", "A correção continua valendo em anos que o modelo nunca viu?"),
-    ("estabilidade", "5 · A estabilidade", "O acerto se mantém mês a mês, ou só na média do ano?"),
-    ("entrega", "6 · A entrega", "O que sai disso na prática, e com que ressalva?"),
+    ("problema", "A1 · O problema", "Por que a correção que já existe não resolve o vendaval?"),
+    ("experimento", "A2 · O experimento", "O que foi testado, e o que significa cada configuração?"),
+    ("resultado", "A3 · O resultado", "Qual combinação venceu, e em quê?"),
+    ("prova", "A4 · A prova", "A correção continua valendo em anos que o modelo nunca viu?"),
+    ("estabilidade", "A5 · A estabilidade", "O acerto se mantém mês a mês, ou só na média do ano?"),
+    ("entrega", "A6 · A entrega", "O que sai disso na prática, e com que ressalva?"),
+]
+
+SECOES_HORARIAS = [
+    ("horario_porque", "B1 · Por que ir para o horário?",
+     "O que um modelo horário tem para aprender que o diário não tem?"),
+    ("horario_teste", "B2 · O que foi testado?",
+     "Em quais regiões e com quais modelos?"),
+    ("horario_mapa", "B3 · Como ficam as previsões?",
+     "O que cada modelo prevê, dia a dia e nos extremos?"),
 ]
 
 
@@ -54,6 +64,9 @@ def hub(ir_para):
     )
 
     st.info(
+        "**Duas trilhas.** A trilha **A** conta o experimento com modelos "
+        "**diários**, o que está validado. A trilha **B** reúne os testes com "
+        "modelos **horários**, ainda **experimentais**.\n\n"
         "**O que este painel cobre:** o experimento de modelagem e o mapa "
         "corrigido que ele produz. **O que não cobre:** o estudo de "
         "interpolação em si, que é trabalho separado e aparece aqui só para "
@@ -63,6 +76,7 @@ def hub(ir_para):
 
     p = ap.panorama()
     contagem = ap.contagem_de_estacoes()
+    st.caption("**Números da trilha A (modelos diários, validados)**")
     colunas = st.columns(4)
     colunas[0].metric("Estações do INMET", p["estacoes"] or SEM_DADO)
     colunas[1].metric("Áreas analisadas", p["areas"] or SEM_DADO)
@@ -85,7 +99,7 @@ def hub(ir_para):
     faixa = contagem["faixa_usada"]
     usadas = f"; {faixa[0]} a {faixa[1]} com série utilizável" if faixa else ""
     with st.container(border=True):
-        st.markdown("**Os dados por trás dos resultados**")
+        st.markdown("**Os dados por trás dos resultados (trilha A)**")
         campos = st.columns(3)
         campos[0].markdown(f"**Região**  \nSul do Brasil, {p['areas'] or SEM_DADO} áreas")
         campos[1].markdown(
@@ -97,25 +111,152 @@ def hub(ir_para):
         )
 
     st.divider()
-    st.caption("**Por onde começar**")
-    for linha in range(0, len(SECOES), 3):
-        for coluna, (chave, titulo, pergunta) in zip(
-            st.columns(3), SECOES[linha:linha + 3]
-        ):
-            with coluna.container(border=True):
-                st.markdown(f"**{titulo}**")
-                st.caption(pergunta)
-                st.button(
-                    "Abrir", key=f"ir_{chave}",
-                    on_click=ir_para, args=(chave,),
-                    width="stretch",
-                )
+    for titulo_trilha, secoes in (
+        ("**Trilha A · Modelos diários (validado)**", SECOES),
+        ("**Trilha B · Modelos horários (experimental)**", SECOES_HORARIAS),
+    ):
+        st.caption(titulo_trilha)
+        for linha in range(0, len(secoes), 3):
+            for coluna, (chave, titulo, pergunta) in zip(
+                st.columns(3), secoes[linha:linha + 3]
+            ):
+                with coluna.container(border=True):
+                    st.markdown(f"**{titulo}**")
+                    st.caption(pergunta)
+                    st.button(
+                        "Abrir", key=f"ir_{chave}",
+                        on_click=ir_para, args=(chave,),
+                        width="stretch",
+                    )
+
+# ── B1 · Por que ir para o horário ────────────────────────────────────────────
+
+def _faixa_de_areas(areas: list[int]) -> str:
+    """[1, 2, 3, 4, 12] -> '1 a 4 e 12'."""
+    grupos, inicio = [], None
+    for i, a in enumerate(areas):
+        if inicio is None:
+            inicio = a
+        if i + 1 == len(areas) or areas[i + 1] != a + 1:
+            grupos.append(str(inicio) if inicio == a else f"{inicio} a {a}")
+            inicio = None
+    return " e ".join([", ".join(grupos[:-1]), grupos[-1]] if len(grupos) > 1 else grupos)
+
+
+def horario_porque():
+    from engine import PERIODOS
+
+    st.header("B1 · Por que ir para o horário?")
+    st.info(
+        "**Trilha experimental.** Os modelos horários estão em teste e ainda "
+        "não passaram pela validação da trilha A."
+    )
+
+    h = grade_v12.panorama()
+    if not h["dias"]:
+        st.warning("Os arquivos da grade horária não estão publicados neste painel.")
+        return
+
+    st.markdown("#### Quanto tempo cada ponto oferece para o modelo aprender?")
+    st.plotly_chart(
+        fg.barras_de_exemplos(h["dias"], h["horas"]),
+        width="stretch", config=GRAFICO, key="b1_exemplos",
+    )
+    dias, horas = (f"{h[k]:,}".replace(",", ".") for k in ("dias", "horas"))
+    st.success(
+        f"No mesmo período, cada ponto tem **{dias} dias** ou **{horas} horas**: "
+        "24 vezes mais pontos no tempo para o modelo horário aprender."
+    )
+    st.caption(
+        "A hipótese em teste é que mais exemplos ajudam a captar o extremo. "
+        "Ela ainda não está provada."
+    )
+
+    st.divider()
+    st.markdown("#### Os dois lado a lado")
+    treino, teste = PERIODOS["treino"], PERIODOS["teste"]
+    diario_periodo = f"{treino[0][:4]} a {teste[1][:4]}" if treino and teste else SEM_DADO
+    ficha = pd.DataFrame(
+        {
+            "Modelos diários (trilha A)": [
+                "Um dia", "A rajada máxima do dia",
+                f"{ap.panorama()['areas'] or SEM_DADO} áreas", diario_periodo, "Validado",
+            ],
+            "Modelos horários (trilha B)": [
+                "Uma hora", "A rajada de cada hora",
+                f"Áreas {_faixa_de_areas(h['areas'])}",
+                f"{h['inicio']:%Y} a {h['fim']:%Y}", "Experimental",
+            ],
+        },
+        index=["Cada exemplo é", "O modelo prevê", "Onde", "Período dos dados", "Situação"],
+    )
+    st.table(ficha)
+
+# ── B2 · O que foi testado ────────────────────────────────────────────────────
+
+def horario_teste():
+    st.header("B2 · O que foi testado?")
+    st.info(
+        "**Trilha experimental.** Os modelos horários estão em teste e ainda "
+        "não passaram pela validação da trilha A."
+    )
+
+    celulas = grade_v12.celulas()
+    if celulas.empty:
+        st.warning("Os arquivos da grade horária não estão publicados neste painel.")
+        return
+
+    st.markdown("#### Em quais regiões?")
+    st.plotly_chart(
+        fg.mapa_das_regioes(celulas), width="stretch", config=GRAFICO, key="b2_mapa",
+    )
+    ficha = grade_v12.ficha_das_regioes()
+    st.table(ficha)
+    st.success(
+        f"Duas regiões, {len(celulas)} células com previsão e "
+        f"{int(ficha['Estações'].sum())} estações do INMET dentro delas."
+    )
+
+    st.divider()
+    st.markdown("#### Com quais modelos?")
+    modelos = grade_v12.en.GRADE_V12_MODELOS
+    st.table(pd.DataFrame(
+        [{"Modelo": nome,
+          "Treinado com": "Cada área separada" if "local" in chave else "Todas as áreas juntas"}
+         for chave, nome in modelos.items()]
+    ).set_index("Modelo"))
+    n_ml = sum(chave.startswith("ml_") for chave in modelos)
+    st.success(
+        f"{len(modelos)} modelos em cada região: {n_ml} de aprendizado de máquina "
+        f"e {len(modelos) - n_ml} LSTM. Os locais aprendem uma área por vez, os "
+        "globais aprendem com todas as áreas juntas."
+    )
+    st.caption(
+        "Os arquivos não dizem o que “ML” designa nem o que “trimestral” e "
+        "“anual” significam."
+    )
+
+
+# ── B3 · Como ficam as previsões ──────────────────────────────────────────────
+
+def horario_mapa():
+    st.header("B3 · Como ficam as previsões?")
+    st.info(
+        "**Trilha experimental.** Os modelos horários estão em teste e ainda "
+        "não passaram pela validação da trilha A."
+    )
+    st.markdown(
+        "Para cada região, a rajada prevista por cada modelo em toda a malha "
+        "do ERA5, de 2000 a 2025. Os modelos aparecem separados, sem a "
+        "costura do vencedor por área e trimestre que a trilha A usa."
+    )
+    grade_v12.desenhar("b3_v12")
 
 
 # ── 1 · O problema ────────────────────────────────────────────────────────────
 
 def problema():
-    st.header("1 · O problema")
+    st.header("A1 · O problema")
 
     st.info(
         "**A pergunta deste projeto:** um modelo que aprende das variáveis "
@@ -224,7 +365,7 @@ def problema():
                 f"{abs(teto['pior_vies']):.1f} m/s, sempre para menos, e "
                 f"“{teto['melhor_alternativa']}” chega mais perto sem escapar "
                 "do mesmo limite. Números do estudo de interpolação, com "
-                "régua diferente da usada nas seções 3 e 5."
+                "régua diferente da usada nas seções A3 e A5."
             )
 
     st.divider()
@@ -244,7 +385,7 @@ def problema():
 # ── 2 · O experimento ─────────────────────────────────────────────────────────
 
 def experimento():
-    st.header("2 · O experimento")
+    st.header("A2 · O experimento")
     st.subheader("O que foi testado, e o que significa cada configuração?")
 
     from engine import PERIODOS
@@ -256,7 +397,7 @@ def experimento():
     colunas[2].metric("Modelos avaliados no screening", quantos or SEM_DADO)
 
     st.info(
-        "**Abordagens de modelagem** — **Modelos clássicos**: várias técnicas "
+        "**Abordagens de modelagem.** **Modelos clássicos**: várias técnicas "
         "tradicionais de aprendizado de máquina testadas automaticamente por "
         "área e estação, fica a que acerta mais em cada uma. **Rede neural "
         "(MLP)**: uma rede neural simples, várias camadas de neurônios "
@@ -316,7 +457,7 @@ def experimento():
         f"**{rotulo_grupo[g]}**: {ap.NOME_GRUPO[g]}" for g in rotulo_grupo
     )
     st.info(
-        f"**Grupos de variáveis** — {definicoes}. **Extremos inventados**: "
+        f"**Grupos de variáveis**: {definicoes}. **Extremos inventados**: "
         "rajadas artificiais geradas por uma rede treinada para imitar as "
         "reais, somadas ao treino porque vendaval de verdade é raro demais "
         "para o modelo aprender só com o que existe."
@@ -370,7 +511,7 @@ def experimento():
 # ── 3 · O resultado ───────────────────────────────────────────────────────────
 
 def resultado():
-    st.header("3 · O resultado")
+    st.header("A3 · O resultado")
     st.subheader("Qual combinação venceu, e em quê?")
 
     quadro = ap.quadro_experimentos()
@@ -410,7 +551,7 @@ def resultado():
             "Os números abaixo são o desempenho absoluto de cada "
             "experimento, que continua válido. O que **não** se deve ler "
             "daqui é “quanto cada configuração melhorou sobre a base”, a "
-            "base publicada não é a base (ver seção 2)."
+            "base publicada não é a base (ver seção A2)."
         )
 
     metrica = st.radio(
@@ -432,7 +573,7 @@ def resultado():
     if not quadro["completo"].all():
         st.caption(
             "O gráfico mostra apenas os experimentos que cobriram todas as "
-            "áreas. Os demais aparecem na seção 2."
+            "áreas. Os demais aparecem na seção A2."
         )
 
     with st.expander("Ver o quadro completo, número por número"):
@@ -452,7 +593,7 @@ def resultado():
 # ── 4 · A prova ───────────────────────────────────────────────────────────────
 
 def prova():
-    st.header("4 · A prova")
+    st.header("A4 · A prova")
     st.subheader("A correção continua valendo em anos que o modelo nunca viu?")
 
     from engine import PERIODOS
@@ -480,7 +621,7 @@ def prova():
 
     st.divider()
     st.markdown(
-        "A Seção 3 mostrou o viés médio do ano inteiro. Abaixo o mesmo "
+        "A seção A3 mostrou o viés médio do ano inteiro. Abaixo o mesmo "
         "número aparece quebrado por estação, para ver se o acerto se "
         "mantém o ano todo ou se a média esconde um trimestre ruim."
     )
@@ -508,7 +649,7 @@ def prova():
             "a pior e a melhor estação"
             for pipeline, valor in amplitudes.items()
         )
-        st.caption(f"Amplitude sazonal do viés — {partes}.")
+        st.caption(f"Amplitude sazonal do viés: {partes}.")
 
 
 @st.cache_data(show_spinner=False)
@@ -541,7 +682,7 @@ def _resultados_por_trimestre() -> pd.DataFrame:
 # ── 5 · A estabilidade ────────────────────────────────────────────────────────
 
 def estabilidade():
-    st.header("5 · A estabilidade")
+    st.header("A5 · A estabilidade")
     st.subheader("O acerto se mantém mês a mês, ou só na média do ano?")
 
     dados = ap.estabilidade_deploy()
@@ -584,7 +725,7 @@ def estabilidade():
         width="stretch", config=GRAFICO, key="narrativa_estabilidade",
     )
     st.caption(
-        "Só os **Modelos clássicos** recalculam o acerto por janela mensal — "
+        "Só os **Modelos clássicos** recalculam o acerto por janela mensal: "
         "várias técnicas tradicionais de aprendizado de máquina, testadas "
         "automaticamente por área e estação, fica a que acerta mais em "
         "cada uma."
@@ -624,10 +765,11 @@ def estabilidade():
 # ── 6 · A entrega ─────────────────────────────────────────────────────────────
 
 def entrega(ir_para):
-    st.header("6 · A entrega")
+    st.header("A6 · A entrega")
     st.subheader("O que sai disso na prática, e com que ressalva?")
 
     from engine import (
+        grade_v12_disponivel as en_grade_v12_disponivel,
         CORRECTED_GRID_VERSIONS, CORRECTED_GRID_DEFAULT_VERSION,
         corrected_grid_date_bounds, corrected_grid_snapshot, corrected_grid_percentil,
         build_grid_map, stations_geo_df,
@@ -648,7 +790,8 @@ def entrega(ir_para):
         if a.stem.rsplit("_", 1)[-1].isdigit()
     })
     colunas = st.columns(2)
-    colunas[0].metric("Versões publicadas", ", ".join(sorted(disponiveis)))
+    versoes = sorted(disponiveis)
+    colunas[0].metric("Versões publicadas", ", ".join(versoes))
     colunas[1].metric("Anos cobertos", f"{min(anos)}-{max(anos)}" if anos else SEM_DADO)
 
     st.markdown(
@@ -672,13 +815,13 @@ def entrega(ir_para):
         st.caption(
             f"{niveis_corrigidos.attrs.get('abordagem', '')} / "
             f"“{niveis_corrigidos.attrs.get('configuracao', '')}”, a "
-            "configuração com menor viés no extremo (Seção 3), contra a V5 "
+            "configuração com menor viés no extremo (seção A3), contra a V5 "
             "(Kriging Ordinário), recalculada sem o vazamento espacial "
             "conhecido e restrita às mesmas 234 estações e ao mesmo "
-            "período de teste (2020-2025) do Vendaval IA — mesmo conjunto "
+            "período de teste (2020-2025) do Vendaval IA, mesmo conjunto "
             "dos dois lados, senão a diferença mediria a rede, não o "
             "método. P90/P95/P99/Máximo aqui são o valor de cada nível, não "
-            "a métrica “Viés no extremo (P90)” das Seções 3 a 5 (aquela é o "
+            "a métrica “Viés no extremo (P90)” das seções A3 a A5 (aquela é o "
             "erro médio só nos dias que passam do limiar); os demais não "
             "são publicados por nenhuma das duas pipelines, calculados "
             "aqui a partir do dado bruto por estação."
@@ -690,14 +833,14 @@ def entrega(ir_para):
                 f"(P99: +{p99['vies_medio']:.1f} m/s); a V5 **fica abaixo** "
                 f"nos quatro (P99: {p99['vies_v5_medio']:.1f} m/s). "
                 "Direções opostas, e a distância do Vendaval IA cresce mais "
-                "rápido conforme o percentil sobe — não dá pra dizer sem "
+                "rápido conforme o percentil sobe, não dá pra dizer sem "
                 "ressalva qual erra menos: um supera, o outro falta, e a "
                 "magnitude do erro depende do nível."
             )
         st.caption(
             "Resultado confiável: a configuração usada é a única com "
             "cobertura completa das áreas e viés no extremo (P90) validado "
-            "pela própria pipeline (Seção 3); a V5 é LOOCV genuíno, sem a "
+            "pela própria pipeline (seção A3); a V5 é LOOCV genuíno, sem a "
             "vantagem de rede nacional/histórico completo da V5 de "
             "produção."
         )
@@ -755,6 +898,12 @@ def entrega(ir_para):
             "no INMET/V5."
         )
 
+    if en_grade_v12_disponivel():
+        st.caption(
+            "As previsões de modelos horários, ainda experimentais, estão na "
+            "trilha B."
+        )
+
     st.divider()
     st.markdown("#### A ressalva que o mapa carrega")
     esquerda, direita = st.columns(2)
@@ -762,17 +911,19 @@ def entrega(ir_para):
         st.markdown("**Prever na estação e espalhar**")
         st.caption(
             "Mantém o desempenho medido, mas a cobertura fica presa à "
-            "densidade de estações do dia. É o método das versões aqui."
+            "densidade de estações do dia. É o método das versões v1 e v1.1."
         )
     with direita.container(border=True):
         st.markdown("**Prever direto em cada célula**")
         st.caption(
             "Todo ponto recebe valor todo dia, mas algumas variáveis do "
             "treino dependem de haver estação no ponto e faltam na célula. "
-            "O projeto mediu essa perda, e ela não é desprezível."
+            "O projeto mediu essa perda, e ela não é desprezível. Foi o "
+            "desenho da v1.2 no histórico do projeto; os arquivos de previsão "
+            "mais recentes não declaram o método."
         )
     st.info(
-        "O acerto das seções 3 e 5 é o **da estação**. No mapa ele é menor: "
+        "O acerto das seções A3 e A5 é o **da estação**. No mapa ele é menor: "
         "ali o resultado é extrapolação do que foi medido, não medição."
     )
     st.caption(

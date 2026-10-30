@@ -670,7 +670,7 @@ def build_best_per_cluster_bars(
             # Ranking vem da validação (mesma etapa que escolhe o vencedor),
             # não do teste mostrado na linha principal — por isso o #1 pode
             # ter um valor diferente do R2 já plotado na barra.
-            lines = [f"{i + 1}. {m} — {v:.4f}" for i, (m, v) in enumerate(top)]
+            lines = [f"{i + 1}. {m}: {v:.4f}" for i, (m, v) in enumerate(top)]
             breakdown_html.append(
                 "<br><br>Candidatos LazyPredict (val):<br>" + "<br>".join(lines)
             )
@@ -800,12 +800,12 @@ def build_lazy_top5_chart(top5_df: pd.DataFrame) -> go.Figure:
             customdata=models,
             text=[f"{v:.3f}" if v == v else "" for v in y],
             textposition="outside",
-            hovertemplate="<b>#%{fullData.name}</b> — %{customdata}<br>R2: %{y:.4f}<extra></extra>",
+            hovertemplate="<b>#%{fullData.name}</b>: %{customdata}<br>R2: %{y:.4f}<extra></extra>",
         ))
 
     fig.update_layout(
         barmode="group",
-        title="Modelos clássicos — os 5 melhores por configuração (por R²)",
+        title="Modelos clássicos: os 5 melhores por configuração (por R²)",
         yaxis_title="R²",
         template="plotly_dark", height=440,
         legend={"orientation": "h", "y": -0.22},
@@ -1011,7 +1011,7 @@ def build_residual_timeseries(estacao: str | None, mlp_preds_df: pd.DataFrame) -
     ))
     fig.add_hline(y=0, line_color="black", line_width=0.8)
     fig.update_layout(
-        title=f"Resíduo ao longo do tempo — estação {estacao}",
+        title=f"Resíduo ao longo do tempo: estação {estacao}",
         xaxis_title="Data", yaxis_title="Resíduo (m/s)",
         template="plotly_dark", height=380,
         margin={"t": 50, "b": 60},
@@ -1530,7 +1530,7 @@ def build_ablation_scatter_with_ols(
     ))
     fig.update_layout(
         title=(
-            f"Observado × Previsto — {PIPELINE_LABELS.get(pipeline, pipeline)} / {arm}<br>"
+            f"Observado × Previsto: {PIPELINE_LABELS.get(pipeline, pipeline)} / {arm}<br>"
             f"<sup>viés={metrics['bias']:+.2f} · REQM={metrics['rmse']:.2f} · "
             f"EAM={metrics['mae']:.2f} · corr={metrics['corr']:.2f} · n={metrics['n']}</sup>"
         ),
@@ -1563,7 +1563,7 @@ def build_lstm_loss_curve(histories: dict, cluster_id, season: str) -> go.Figure
     val_loss = leaf.get("val_loss", [])
     if all(v != v for v in loss):  # todos NaN — season sem treino válido
         fig.update_layout(
-            title=f"Training history for cluster {cluster_id} / {season} is empty (NaN) — known pipeline gap",
+            title=f"Training history for cluster {cluster_id} / {season} is empty (NaN): known pipeline gap",
             template="plotly_dark", height=380,
         )
         return fig
@@ -1574,7 +1574,7 @@ def build_lstm_loss_curve(histories: dict, cluster_id, season: str) -> go.Figure
         fig.add_trace(go.Scatter(x=list(range(1, len(val_loss) + 1)), y=val_loss,
                                   mode="lines", name="erro na validação", line={"color": "#c98a1f"}))
     fig.update_layout(
-        title=f"Convergência do treino (LSTM) — área {cluster_id} / {season}",
+        title=f"Convergência do treino (LSTM): área {cluster_id} / {season}",
         xaxis_title="Época", yaxis_title="Erro",
         template="plotly_dark", height=380,
         legend={"orientation": "h", "y": -0.2},
@@ -1596,7 +1596,7 @@ def build_importance(importance_df: pd.DataFrame, cluster_id) -> go.Figure:
     ))
     fig.add_vline(x=0, line_color="black", line_width=0.8)
     fig.update_layout(
-        title=f"Importância das variáveis (MLP) — área {cluster_id}",
+        title=f"Importância das variáveis (MLP): área {cluster_id}",
         xaxis_title="Queda no R² ao embaralhar a variável",
         template="plotly_dark", height=480,
         margin={"t": 50, "l": 160},
@@ -1751,6 +1751,130 @@ def grid_station_percentile_values(
     })
 
 
+# ── Grade v1.2: previsões por modelo, uma região por arquivo ─────────────────
+# Formato diferente do grid costurado (v1, v1.1): seis previsões lado a lado
+# sobre a malha do ERA5, sem `bias` nem direção, por isso loaders próprios.
+
+GRADE_V12_DIR = Path("artifacts/corrected_grid/v1.2")
+GRADE_V12_REGIOES = {
+    "RS/SC (áreas 1 a 4)": "pred_c1_c2_c3_c4.nc",
+    "Área 12": "pred_c12.nc",
+}
+# Rótulos neutros: o significado exato de "local" e "global" e de "ml" não está
+# nos metadados do arquivo.
+GRADE_V12_MODELOS = {
+    "ml_local": "ML local",
+    "ml_global_trimestral": "ML global trimestral",
+    "ml_global_anual": "ML global anual",
+    "lstm_local": "LSTM local",
+    "lstm_global_anual": "LSTM global anual",
+}
+# Meses que os modelos não viram em 2000-2024; 2025 inteiro também é inédito.
+GRADE_V12_MESES_FORA = (1, 4, 7, 10)
+GRADE_V12_ANO_INEDITO = 2025
+
+
+def grade_v12_disponivel() -> dict[str, Path]:
+    return {
+        regiao: GRADE_V12_DIR / arquivo
+        for regiao, arquivo in GRADE_V12_REGIOES.items()
+        if (GRADE_V12_DIR / arquivo).exists()
+    }
+
+
+def grade_v12_fora_da_amostra(tempos) -> np.ndarray:
+    """True nos dias que nenhum modelo viu no treino nem na validação."""
+    t = pd.DatetimeIndex(tempos)
+    return np.asarray(
+        (t.year >= GRADE_V12_ANO_INEDITO) | t.month.isin(GRADE_V12_MESES_FORA)
+    )
+
+
+@st.cache_resource
+def load_grade_v12(regiao: str) -> xr.Dataset:
+    caminho = grade_v12_disponivel().get(regiao)
+    if caminho is None:
+        return xr.Dataset()
+    return xr.open_dataset(caminho)
+
+
+@st.cache_data
+def grade_v12_limites(regiao: str) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    ds = load_grade_v12(regiao)
+    if not ds.data_vars:
+        return None
+    tempos = pd.to_datetime(ds.time.values)
+    return tempos.min(), tempos.max()
+
+
+def _grade_v12_longa(campos: dict[str, np.ndarray], lat, lon) -> pd.DataFrame:
+    lon2d, lat2d = np.meshgrid(lon, lat)
+    df = pd.DataFrame({"longitude": lon2d.ravel(), "latitude": lat2d.ravel()})
+    for nome, valores in campos.items():
+        df[nome] = np.asarray(valores).ravel()
+    return df.dropna()
+
+
+@st.cache_data
+def grade_v12_snapshot(date_str: str, regiao: str, modelo: str) -> pd.DataFrame:
+    """Um dia achatado em long-form, no formato de `build_grid_map`:
+    `ws_original` é o ERA5 e `rajada_max_corrigida` é o modelo escolhido."""
+    cols = ["longitude", "latitude", "ws_original", "rajada_max_corrigida"]
+    ds = load_grade_v12(regiao)
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    dia = ds[["era5", modelo]].sel(time=date_str, method="nearest")
+    return _grade_v12_longa(
+        {"ws_original": dia["era5"].values, "rajada_max_corrigida": dia[modelo].values},
+        dia.lat.values, dia.lon.values,
+    )
+
+
+def grade_v12_dia_fora_da_amostra(date_str: str, regiao: str) -> bool:
+    ds = load_grade_v12(regiao)
+    dia = ds.time.sel(time=date_str, method="nearest").values
+    return bool(grade_v12_fora_da_amostra([dia])[0])
+
+
+@st.cache_data
+def grade_v12_nivel(regiao: str, modelo: str, nivel: str, so_fora: bool = True) -> pd.DataFrame:
+    """P90, P95, P99 ou Máximo célula a célula. Por padrão só nos dias fora da
+    amostra, senão o mapa mediria o ajuste do treino."""
+    cols = ["longitude", "latitude", "ws_original", "rajada_max_corrigida"]
+    ds = load_grade_v12(regiao)
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    recorte = ds[["era5", modelo]]
+    if so_fora:
+        recorte = recorte.isel(time=np.flatnonzero(grade_v12_fora_da_amostra(ds.time.values)))
+    recorte = recorte.load()
+    if nivel == "Máximo":
+        r = recorte.max(dim="time", skipna=True)
+    else:
+        r = recorte.quantile(_GRID_QUANTIL[nivel], dim="time", skipna=True)
+    return _grade_v12_longa(
+        {"ws_original": r["era5"].values, "rajada_max_corrigida": r[modelo].values},
+        r.lat.values, r.lon.values,
+    )
+
+
+@st.cache_data
+def grade_v12_serie_ponto(lat: float, lon: float, regiao: str, modelo: str) -> pd.DataFrame:
+    """Série no pixel mais próximo, com a marca de dia dentro/fora da amostra."""
+    cols = ["time", "ws_original", "rajada_max_corrigida", "fora_da_amostra"]
+    ds = load_grade_v12(regiao)
+    if not ds.data_vars:
+        return pd.DataFrame(columns=cols)
+    ponto = ds[["era5", modelo]].sel(lat=lat, lon=lon, method="nearest").load()
+    tempos = pd.to_datetime(ponto.time.values)
+    return pd.DataFrame({
+        "time": tempos,
+        "ws_original": ponto["era5"].values,
+        "rajada_max_corrigida": ponto[modelo].values,
+        "fora_da_amostra": grade_v12_fora_da_amostra(tempos),
+    })
+
+
 @st.cache_data
 def load_inmet_station_series(estacao: str) -> pd.Series:
     """Rajada máxima diária observada (INMET_Stratified.nc) pra uma única
@@ -1773,7 +1897,8 @@ GRID_VMIN, GRID_VMAX = 0.0, 20.0  # rajada máxima (m/s) — mesma escala do not
 def build_grid_map(
     df: pd.DataFrame, value_col: str, stations_df: pd.DataFrame,
     sel_station: str | None, title: str, height: int = 380,
-    show_colorbar: bool = True,
+    show_colorbar: bool = True, vmax: float = GRID_VMAX,
+    centro: tuple[float, float] | None = None, zoom: float = 4,
 ) -> go.Figure:
     """Raster do grid corrigido como pontos pequenos/esmaecidos coloridos por
     valor (mesma linguagem visual do campo IDW em build_interp_map) +
@@ -1789,7 +1914,7 @@ def build_grid_map(
     if not df.empty:
         marker = {
             "size": 6, "color": df[value_col], "colorscale": "Turbo",
-            "cmin": GRID_VMIN, "cmax": GRID_VMAX, "opacity": 0.55,
+            "cmin": GRID_VMIN, "cmax": vmax, "opacity": 0.55,
             "showscale": show_colorbar,
         }
         if show_colorbar:
@@ -1826,14 +1951,14 @@ def build_grid_map(
         map={
             "style": _theme["map_style"],
             "center": {
-                "lat": sum(ERA5_BASIN_EXTENT["lat"]) / 2,
-                "lon": sum(ERA5_BASIN_EXTENT["lon"]) / 2,
+                "lat": centro[0] if centro else sum(ERA5_BASIN_EXTENT["lat"]) / 2,
+                "lon": centro[1] if centro else sum(ERA5_BASIN_EXTENT["lon"]) / 2,
             },
-            "zoom": 4,
+            "zoom": zoom,
         },
         margin={"l": 0, "r": 0, "t": 30, "b": 0}, height=height,
         paper_bgcolor="rgba(0,0,0,0)", font={"color": _theme["font_color"]},
-        title=title, uirevision="corrected-grid-map",
+        title=title, uirevision=f"corrected-grid-map-{centro}-{zoom}",
     )
     return fig
 
@@ -1891,7 +2016,7 @@ def build_grid_station_timeseries(
     ))
     if obs is not None and not obs.empty:
         fig.add_trace(go.Scatter(
-            x=obs.index, y=obs.values, name=f"INMET — {estacao}",
+            x=obs.index, y=obs.values, name=f"INMET: {estacao}",
             line={"color": "royalblue", "width": 1.5},
         ))
     elif avail_years:
@@ -1910,7 +2035,7 @@ def build_grid_station_timeseries(
         )
 
     fig.update_layout(
-        title=f"Rajada máxima diária — {estacao} ({year})",
+        title=f"Rajada máxima diária: {estacao} ({year})",
         xaxis_title="Data", yaxis_title="Rajada máxima (m/s)",
         template="plotly_dark", height=380,
         legend={"orientation": "h", "y": -0.2},

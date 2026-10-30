@@ -20,6 +20,8 @@ import pandas as pd
 import streamlit as st
 
 from engine import *  # noqa: F403, motor completo: constantes, loaders e figuras
+import grade_v12
+from engine import grade_v12_disponivel as en_grade_v12_disponivel
 # `import *` não traz nomes iniciados por underscore; estes são auxiliares do
 # motor que estas telas usam e precisam vir nomeados um a um.
 from apuracao import NOME_ARM, NOME_METRICA  # noqa: F401, rótulos em português
@@ -39,6 +41,9 @@ from engine import (  # noqa: F401
 # exatamente o que quebrou esta tela antes.
 
 
+VERSAO_PREVISOES = "v1.2 experimental (modelos horários)"
+
+
 def _ajuda_das_versoes() -> str:
     """Descreve cada versão do mapa corrigido a partir dos arquivos que ela
     de fato tem. Antes este texto era digitado à mão e já divergia do
@@ -52,6 +57,8 @@ def _ajuda_das_versoes() -> str:
         )
         if anos:
             partes.append(f"{nome}: {min(anos)}-{max(anos)} ({len(anos)} anos)")
+    if en_grade_v12_disponivel():
+        partes.append("v1.2 (experimental): previsões de modelos horários por região, 2000-2025")
     return " · ".join(partes) if partes else "Sem versão publicada."
 
 
@@ -611,6 +618,9 @@ def _render_tab_grid():
         )
         return
 
+    if en_grade_v12_disponivel():
+        _available_versions = _available_versions + [VERSAO_PREVISOES]
+
     grid_version = st.selectbox(
         "Base de dados", _available_versions,
         index=_available_versions.index(CORRECTED_GRID_DEFAULT_VERSION)
@@ -618,6 +628,11 @@ def _render_tab_grid():
         key="grid_version_select",
         help=_ajuda_das_versoes(),
     )
+
+    if grid_version == VERSAO_PREVISOES:
+        st.info("Bateria de modelos horários ainda em teste, fora da validação das seções A3 a A5.")
+        grade_v12.desenhar("explorador_v12", com_estacao=True)
+        return
 
     _grid_bounds = corrected_grid_date_bounds(grid_version)
     if _grid_bounds is None:
