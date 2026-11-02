@@ -636,3 +636,46 @@ def mapas_extremos(grid: pd.DataFrame, estacoes: pd.DataFrame, nivel: str) -> go
     for anotacao in figura.layout.annotations:
         anotacao.font = dict(size=15, color=TINTA)
     return figura
+
+
+def barras_de_exemplos(dias: int, horas: int) -> go.Figure:
+    """Tempo disponível por ponto, em dias e em horas, no mesmo período."""
+    nomes = ["Modelo diário<br>(1 exemplo por dia)", "Modelo horário<br>(1 exemplo por hora)"]
+    figura = go.Figure(go.Bar(
+        x=[dias, horas], y=nomes, orientation="h",
+        marker=dict(color=["#3987e5", "#0e9488"]),
+        text=[f"{dias:,}".replace(",", "."), f"{horas:,}".replace(",", ".")],
+        textposition="outside", textfont=dict(color=TINTA, size=16),
+        hovertemplate="%{y}: %{text}<extra></extra>", cliponaxis=False,
+    ))
+    figura = _base(figura, altura=230, esquerda=190, baixo=30, topo=20)
+    figura.update_layout(showlegend=False, xaxis=dict(visible=False, range=[0, horas * 1.18]))
+    figura.update_yaxes(autorange="reversed", showgrid=False)
+    return figura
+
+
+# Uma cor por área, legíveis sobre o mapa escuro; não é a paleta de estado.
+CORES_DE_AREA = ["#d95926", "#9085e9", "#14b8a6", "#fab219", "#e879a6"]
+
+
+def mapa_das_regioes(celulas: pd.DataFrame) -> go.Figure:
+    """Células com previsão, uma cor por área."""
+    figura = go.Figure()
+    for i, area in enumerate(sorted(celulas["area"].unique())):
+        sub = celulas[celulas["area"] == area]
+        figura.add_trace(go.Scattermap(
+            lat=sub["latitude"], lon=sub["longitude"], mode="markers",
+            marker=dict(size=9, color=CORES_DE_AREA[i % len(CORES_DE_AREA)], opacity=0.8),
+            name=f"Área {area}", hovertemplate=f"Área {area}<extra></extra>",
+        ))
+    figura.update_layout(
+        map=dict(style="carto-darkmatter",
+                 center=dict(lat=float(celulas["latitude"].mean()),
+                             lon=float(celulas["longitude"].mean())),
+                 zoom=3.8),
+        margin=dict(l=0, r=0, t=0, b=0), height=460,
+        paper_bgcolor="rgba(0,0,0,0)", font=dict(color=TINTA, size=14),
+        legend=dict(orientation="h", yanchor="bottom", y=0.01, x=0.01,
+                    bgcolor="rgba(20,20,19,0.8)", font=dict(color=TINTA, size=14)),
+    )
+    return figura

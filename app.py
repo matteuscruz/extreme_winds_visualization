@@ -83,6 +83,7 @@ st.markdown(
 PAGINAS = (
     [("hub", "Início")]
     + [(chave, titulo) for chave, titulo, _ in narrativa.SECOES]
+    + [(chave, titulo) for chave, titulo, _ in narrativa.SECOES_HORARIAS]
     + [("explorador", "Explorador (consulta técnica)")]
 )
 ROTULOS = dict(PAGINAS)
@@ -217,6 +218,12 @@ elif pagina == "estabilidade":
     narrativa.estabilidade()
 elif pagina == "entrega":
     narrativa.entrega(ir_para)
+elif pagina == "horario_porque":
+    narrativa.horario_porque()
+elif pagina == "horario_teste":
+    narrativa.horario_teste()
+elif pagina == "horario_mapa":
+    narrativa.horario_mapa()
 elif pagina == "explorador":
     st.title("Explorador")
     st.caption(
