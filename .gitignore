@@ -30,3 +30,11 @@ artifacts/**/*.pdf
 
 artifacts/lstm_pytorch/
 artifacts/mlp_clusters/
+!dataset/estacoes_bacia.csv
+!dataset/celulas_era5_modeladas.csv
+!dataset/estudo_c3_importancia.csv
+!dataset/estudo_c3_configuracoes.csv
+!dataset/erro_por_cluster.csv
+!dataset/deteccao_extremos.csv
+!dataset/vies_era5.csv
+!dataset/vies_modelos_extremos.csv
