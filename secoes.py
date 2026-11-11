@@ -9,8 +9,8 @@ import clusters as cl
 GRAFICO = {"responsive": True}
 
 SECOES = [
-    ("contexto", "1 · Contexto e problema", "Por que corrigir a rajada do ERA5?"),
-    ("area", "2 · Área de estudo", "Onde o projeto olha?"),
+    ("area", "1 · Área de estudo", "Onde o projeto olha?"),
+    ("contexto", "2 · Contexto e problema", "Por que corrigir a rajada do ERA5?"),
     ("experimento", "3 · Experimento", "O que foi feito, passo a passo?"),
     ("resultados", "4 · Resultados", "O que funcionou melhor?"),
     ("entrega", "5 · Entrega", "O que sai disso e com que ressalva?"),
@@ -53,6 +53,11 @@ def _celulas(versao):
     return cl.carregar_celulas()
 
 
+def _lista(numeros) -> str:
+    nomes = [str(n) for n in numeros]
+    return ", ".join(nomes[:-1]) + " e " + nomes[-1]
+
+
 def _em_construcao(titulo: str):
     st.header(titulo)
     st.info("Seção em reescrita.")
@@ -78,7 +83,7 @@ def hub(ir_para):
     m4.metric("Pontos do ERA5 no modelo", len(cel))
     st.info(
         "O painel cobre o modelo de aprendizado de máquina que usa o ERA5 hora a hora. A interpolação, "
-        "uma tentativa anterior feita em outro estudo, aparece só como contexto, na seção 1."
+        "uma tentativa anterior feita em outro estudo, aparece só como contexto, na seção 2."
     )
     with st.expander("Siglas e termos usados no painel"):
         st.table({"Termo": [s[0] for s in SIGLAS], "O que quer dizer": [s[1] for s in SIGLAS]})
@@ -98,7 +103,7 @@ def contexto():
 
 
 def area():
-    st.header("2 · Área de estudo")
+    st.header("1 · Área de estudo")
     st.markdown(
         "A **bacia do vendaval** cobre o Sul e o Sudeste do Brasil e está dividida em "
         "**14 clusters**, as divisões da própria bacia."
@@ -115,11 +120,12 @@ def area():
     st.plotly_chart(cl.mapa_das_estacoes(g, est), width="stretch", config=cl.GRAFICO_MAPA,
                     key="mapa_estacoes")
 
-    st.markdown("#### Onde o modelo aprende")
+    st.markdown("#### Pontos do ERA5 e estações do INMET")
     st.markdown(
-        "O ERA5 é uma grade de pontos a cada 0,25 grau, cerca de 25 km. O modelo aprende "
-        "nos pontos que têm uma estação do INMET dentro, onde dá para comparar o ERA5 "
-        "com a rajada medida, e depois vale para todos os pontos do cluster."
+        "O ERA5 é uma grade de pontos a cada 0,25 grau, cerca de 25 km. Só nos pontos que "
+        "têm uma estação do INMET dentro dá para comparar o ERA5 com a rajada medida. "
+        "A grade está desenhada para os clusters do estudo: "
+        f"{_lista(sorted(cel['cluster'].unique()))}."
     )
     opcoes = cl.vistas(cel)
     escolha = st.radio("Aproximar", list(opcoes), horizontal=True, key="vista_grade")
