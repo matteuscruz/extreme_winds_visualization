@@ -10,8 +10,7 @@ coordenadas, lidas dos arquivos de previsão do pipeline.
 
 Os mapas são desenhados num plano de longitude e latitude, sem mapa de fundo:
 o leitor vê só a bacia, e pode dar zoom e arrastar. A região de cada cluster é
-a da documentação do pipeline. A situação de cada cluster (com modelo, em
-obtenção, pendente) precisa ser revista quando mudar.
+a da documentação do pipeline.
 """
 
 from __future__ import annotations
@@ -33,27 +32,16 @@ FUNDO = "#17181a"
 GRADE = "#26292d"
 PASSO = 0.25  # grau, a grade do ERA5
 
-ESTUDO = "Estudo das variáveis"
-VALIDACAO = "Validação longe do Sul"
-MODELADO = "Modelo treinado"
-
-# cluster: região, papel no experimento.
-MODELADOS = {
-    1: ("Sul do RS", MODELADO),
-    2: ("Oeste e noroeste do RS", MODELADO),
-    3: ("Leste do RS", ESTUDO),
-    4: ("Norte do RS e SC", MODELADO),
-    5: ("Norte de SC, PR, SP e sul do RJ", MODELADO),
-    12: ("Leste de MG, ES e RJ", VALIDACAO),
+REGIAO = {
+    1: "Sul do RS",
+    2: "Oeste e noroeste do RS",
+    3: "Leste do RS",
+    4: "Norte do RS e SC",
+    5: "Norte de SC, PR, SP e sul do RJ",
+    12: "Leste de MG, ES e RJ",
 }
-EM_OBTENCAO = {6}
 
-# Cores calmas sobre o fundo escuro: o que tem modelo ganha cor, o resto recua.
-SITUACOES = {
-    "modelado": ("Com modelo treinado", "#3d7ea6"),
-    "obtencao": ("Dados em obtenção", "#b8932f"),
-    "pendente": ("Ainda não trabalhado", "#3a3f47"),
-}
+COR_DA_BACIA = "#3d7ea6"
 CONTORNO = "#aeb4bb"
 
 # Uma cor por cluster. A ordem dos matizes foi escolhida por busca, para que
@@ -69,12 +57,6 @@ COR_ESTACAO = "#ffffff"
 
 GRAFICO_MAPA = {"responsive": True, "scrollZoom": True, "displaylogo": False,
                 "modeBarButtonsToRemove": ["select2d", "lasso2d"]}
-
-
-def situacao(cluster: int) -> str:
-    if cluster in MODELADOS:
-        return "modelado"
-    return "obtencao" if cluster in EM_OBTENCAO else "pendente"
 
 
 # ── Leitura ───────────────────────────────────────────────────────────────────
@@ -192,30 +174,18 @@ def _janela_da_bacia(g: gpd.GeoDataFrame):
 
 # ── Figuras ───────────────────────────────────────────────────────────────────
 
-def _texto_do_hover(cluster: int, n_total: dict, n_modelo: dict) -> str:
-    if cluster in MODELADOS:
-        regiao, papel = MODELADOS[cluster]
-        return (f"<b>Cluster {cluster}</b> · {regiao}<br>{papel}<br>"
-                f"{n_total.get(cluster, 0)} estações do INMET, "
-                f"{n_modelo.get(cluster, 0)} com modelo")
-    return (f"<b>Cluster {cluster}</b><br>{SITUACOES[situacao(cluster)][0]}<br>"
-            f"{n_total.get(cluster, 0)} estações do INMET")
+def _texto_do_hover(cluster: int, n_total: dict) -> str:
+    regiao = f" · {REGIAO[cluster]}" if cluster in REGIAO else ""
+    return f"<b>Cluster {cluster}</b>{regiao}<br>{n_total.get(cluster, 0)} estações do INMET"
 
 
 def mapa_da_bacia(g: gpd.GeoDataFrame, est: pd.DataFrame) -> go.Figure:
-    """Os 14 clusters, coloridos pela situação, com o número em cima."""
+    """Os 14 clusters, todos da mesma cor, com o número em cima."""
     n_total = est.groupby("cluster").size().to_dict()
-    n_modelo = est[est["modelada"]].groupby("cluster").size().to_dict()
     figura = go.Figure()
-    mostradas = set()
     for linha in g.itertuples():
-        chave = situacao(linha.cluster)
-        nome, cor = SITUACOES[chave]
         figura.add_trace(_poligono(
-            linha, cor, _texto_do_hover(linha.cluster, n_total, n_modelo),
-            name=nome, legendgroup=chave, showlegend=chave not in mostradas,
-        ))
-        mostradas.add(chave)
+            linha, COR_DA_BACIA, _texto_do_hover(linha.cluster, n_total), showlegend=False))
     figura.add_trace(_numeros(g))
     return _plano(figura, *_janela_da_bacia(g))
 
@@ -223,7 +193,6 @@ def mapa_da_bacia(g: gpd.GeoDataFrame, est: pd.DataFrame) -> go.Figure:
 def mapa_das_estacoes(g: gpd.GeoDataFrame, est: pd.DataFrame) -> go.Figure:
     """As estações do INMET, uma cor por cluster, com a contagem na legenda."""
     n_total = est.groupby("cluster").size().to_dict()
-    n_modelo = est[est["modelada"]].groupby("cluster").size().to_dict()
     figura = go.Figure()
     for linha in g.itertuples():
         cor = COR_DO_CLUSTER[linha.cluster]

@@ -1,4 +1,4 @@
-"""Seção 1, o contexto: o problema, a primeira tentativa e a hipótese.
+"""Seção 2, o contexto: o problema, a primeira tentativa e a hipótese.
 
 Fontes:
 - `dataset/vies_era5.csv`: quanto o ERA5 erra, em média, nos dias de teste e nos
@@ -116,7 +116,7 @@ def render():
     vies = pd.read_csv(VIES)
     interp = pd.read_csv(INTERPOLACAO)
 
-    st.header("1 · Contexto e problema")
+    st.header("2 · Contexto e problema")
 
     st.markdown("#### O problema")
     p99 = vies[vies["recorte"] == "P99"]
@@ -136,7 +136,8 @@ def render():
     st.caption(
         "Cada barra é a rajada máxima do dia do ERA5 menos a medida pelo INMET, na média, nos meses "
         "de teste. Negativo quer dizer que o ERA5 fica abaixo. Dia extremo é o dia em que a rajada medida "
-        "passa do P95 ou do P99 da própria estação, calculado nos dias de treino. Parte da diferença vem "
+        "passa do P95 ou do P99 da própria estação, calculado nos dias de treino. Teste e treino são as "
+        "partes em que os dados foram divididos, e a seção 3 detalha a divisão. Parte da diferença vem "
         "de escolher os dias pelo valor medido: o ERA5 e o INMET nunca coincidem, e pegar os maiores "
         "medidos destaca os casos em que o ERA5 ficou abaixo."
     )

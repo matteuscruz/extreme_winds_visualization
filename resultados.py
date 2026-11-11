@@ -457,7 +457,7 @@ def render():
 
     continuam = "continuam subestimados em todos" if (md < 0).all() else "continuam subestimados em parte deles"
     st.markdown(
-        "Na seção 1, o ERA5 ficava de "
+        "Na seção 2, o ERA5 ficava de "
         f"{_virgula(e5.abs().min(), 1)} a {_virgula(e5.abs().max(), 1)} m/s abaixo da rajada medida nos dias "
         f"extremos pelo {nivel}. Com o modelo escolhido, fica de {_virgula(md.abs().min(), 1)} a "
         f"{_virgula(md.abs().max(), 1)} m/s abaixo. O déficit é menor que o do ERA5 em {n_menor} dos "
@@ -468,7 +468,7 @@ def render():
                     key="res_vies_extremo")
     st.caption(
         "Cada barra é a rajada prevista menos a medida pelo INMET, em média, nos dias extremos dos meses de "
-        "teste. Negativo quer dizer que a previsão fica abaixo. Vale a mesma ressalva da seção 1: escolher "
+        "teste. Negativo quer dizer que a previsão fica abaixo. Vale a mesma ressalva da seção 2: escolher "
         "os dias pelo valor medido já puxa a previsão para baixo, tanto no ERA5 quanto no modelo, então o "
         "que se compara é a diferença entre as barras."
     )

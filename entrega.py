@@ -301,7 +301,7 @@ def render():
         c2.metric("Pontos do ERA5", _milhar(int(arq["pontos"].sum())))
         c3.metric("Estações", _milhar(int(arq["estacoes"].sum())))
         c4.metric("Tamanho", f"{_virgula(arq['tamanho'].sum(), 0)} MB")
-        regiao = {c: cl.MODELADOS[c][0] for c in CLUSTERS_NC}
+        regiao = {c: cl.REGIAO[c] for c in CLUSTERS_NC}
         _arquivos_e_conteudo(arq, regiao)
         _exemplo()
     else:
